@@ -1,17 +1,19 @@
 use crossterm::event;
 use ratatui::widgets::Widget;
 
-use crate::{app::App, player::Player};
+use crate::{app::App, widget::Player};
 
 mod app;
-mod cursor;
-mod player;
 mod music;
+mod widget;
 
 fn main() {
     let mut terminal = ratatui::init();
 
+    // TODO: Parse config for dir in here
+    // else use $HOME/music dir
     let player = Player::new("/home/lf/music");
+
     let mut app = App::with_player(player);
 
     loop {
@@ -23,7 +25,7 @@ fn main() {
 
         app.handle_event(event::read().unwrap());
 
-        if app.should_exit {
+        if app.should_exit() {
             break;
         }
     }

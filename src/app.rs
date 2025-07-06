@@ -9,12 +9,12 @@ use ratatui::{
 
 use crate::{
     music::{Command, spawn_music},
-    player::Player,
+    widget::Player,
 };
 
 pub struct App {
     player: Player,
-    pub should_exit: bool,
+    should_exit: bool,
     music_handle: mpsc::Sender<Command>,
 }
 
@@ -30,6 +30,10 @@ impl App {
         }
     }
 
+    pub fn should_exit(&self) -> bool {
+        self.should_exit
+    }
+
     pub fn handle_event(&mut self, ev: Event) {
         match ev {
             Event::Key(k) => {
@@ -39,34 +43,35 @@ impl App {
                 match keycode {
                     KeyCode::Esc => self.should_exit = true,
                     KeyCode::Char('k') => {
-                        self.player.cursor.y = self.player.cursor.y.saturating_sub(1);
+                        self.player
+                            .set_cursor(self.player.cursor().saturating_sub(1));
                     }
                     KeyCode::Char('j') => {
-                        if self.player.tracks.len() as u16 > self.player.cursor.y + 1 {
-                            self.player.cursor.y += 1;
+                        let new_y = self.player.cursor() + 1;
+                        if self.player.tracks_len() as u16 > new_y {
+                            self.player.set_cursor(new_y);
                         }
                     }
                     KeyCode::Enter => {
-                        self.player.current =
-                            Some(self.player.tracks[self.player.cursor.y as usize].clone());
+                        self.player.set_current(self.player.track_under_cursor());
 
                         self.music_handle
-                            .send(Command::Play(self.player.current.as_ref().unwrap().into()))
+                            .send(Command::play(self.player.get_current().unwrap()))
                             .unwrap();
                     }
                     KeyCode::Char(' ') => {
-                        if self.player.is_paused {
-                            self.music_handle.send(Command::Resume).unwrap();
-                            self.player.is_paused = false;
+                        if self.player.is_paused() {
+                            self.music_handle.send(Command::pause()).unwrap();
+                            self.player.set_is_paused(false);
                         } else {
-                            self.music_handle.send(Command::Pause).unwrap();
-                            self.player.is_paused = true;
+                            self.music_handle.send(Command::resume()).unwrap();
+                            self.player.set_is_paused(true);
                         }
                     }
                     _ => {}
                 }
             }
-            Event::Mouse(m) => {}
+            Event::Mouse(_m) => {}
             _ => {}
         }
     }
@@ -79,17 +84,11 @@ impl Widget for &mut App {
     {
         let [header, main] = Layout::new(
             Direction::Vertical,
-            [Constraint::Length(1), Constraint::Length(4)],
+            [Constraint::Length(2), Constraint::Length(4)],
         )
         .areas(area);
 
-        let head = Line::raw(
-            self.player
-                .current
-                .as_ref()
-                .map(|s| s.as_str())
-                .unwrap_or("No track"),
-        );
+        let head = Line::raw(self.player.get_current().unwrap_or("No track"));
 
         head.render(header, buf);
 

@@ -18,8 +18,7 @@ impl Widget for &mut Cursor {
         let w = area.width;
         let y = self.y + area.y;
         for x in 0..w {
-            let cell = buf.cell_mut((x, y)).unwrap();
-            cell.set_bg(Color::Yellow);
+            buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
         }
     }
 }

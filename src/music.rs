@@ -8,6 +8,23 @@ pub enum Command {
     Resume,
 }
 
+impl Command {
+    pub fn play<T>(path: T) -> Self
+    where
+        T: Into<PathBuf>,
+    {
+        Command::Play(path.into())
+    }
+
+    pub fn resume() -> Self {
+        Command::Resume
+    }
+
+    pub fn pause() -> Self {
+        Command::Pause
+    }
+}
+
 pub fn spawn_music(rx: Receiver<Command>) {
     std::thread::spawn(move || {
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
