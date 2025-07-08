@@ -1,7 +1,4 @@
-use std::{
-    io::BufReader,
-    path::PathBuf,
-};
+use std::{io::BufReader, path::PathBuf};
 
 use crossbeam_channel::{Receiver, Sender};
 use rodio::{OutputStream, Sink, Source};
@@ -10,6 +7,8 @@ pub enum Command {
     Play(PathBuf),
     Pause,
     Resume,
+    VolumeUp(f32),
+    VolumeDown(f32),
 }
 
 impl Command {
@@ -31,6 +30,7 @@ impl Command {
 
 pub enum Message {
     TrackEnded,
+    CurrentVolume(f32),
 }
 
 struct CustomSource<T>
@@ -83,8 +83,9 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
         let sink = Sink::try_new(&stream_handle).unwrap();
 
+        tx.send(Message::CurrentVolume(sink.volume())).unwrap();
+
         loop {
-            // TODO: Need to create custom Source with callbacks
             let Ok(command) = rx.recv() else { return };
             match command {
                 Command::Play(path) => {
@@ -106,6 +107,24 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                 }
                 Command::Resume => {
                     sink.play();
+                }
+                Command::VolumeUp(vol) => {
+                    if sink.volume() + vol >= 1.0 {
+                        sink.set_volume(1.0);
+                    } else {
+                        sink.set_volume(sink.volume() + vol);
+                    }
+
+                    tx.send(Message::CurrentVolume(sink.volume())).unwrap();
+                }
+                Command::VolumeDown(vol) => {
+                    if sink.volume() - vol <= 0.0 {
+                        sink.set_volume(0.0);
+                    } else {
+                        sink.set_volume(sink.volume() - vol);
+                    }
+
+                    tx.send(Message::CurrentVolume(sink.volume())).unwrap();
                 }
             }
         }

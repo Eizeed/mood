@@ -1,11 +1,11 @@
 use crossbeam_channel::{Receiver, Sender};
 
-use crossterm::event::{Event, KeyCode};
 use ratatui::{
     Terminal,
+    crossterm::event::{Event, KeyCode, KeyModifiers},
     layout::{Constraint, Direction, Layout},
     prelude::Backend,
-    text::Line,
+    text::{Line, Text},
     widgets::Widget,
 };
 
@@ -18,6 +18,7 @@ use crate::{
 pub struct App {
     player: Player,
     should_exit: bool,
+    volume: f32,
 
     pub audio_tx: Sender<Command>,
     pub audio_rx: Receiver<Message>,
@@ -27,18 +28,23 @@ pub struct App {
 
 impl App {
     pub fn with_player(player: Player) -> Self {
-        let (main_music_tx, main_music_rx) = crossbeam_channel::bounded::<Command>(1024);
-        let (music_main_tx, music_main_rx) = crossbeam_channel::bounded::<Message>(1024);
+        let (main_audio_tx, main_audio_rx) = crossbeam_channel::bounded::<Command>(1024);
+        let (audio_main_tx, audio_main_rx) = crossbeam_channel::bounded::<Message>(1024);
 
         let (input_main_tx, input_main_rx) = crossbeam_channel::bounded::<Event>(1024);
 
-        spawn_music(main_music_rx, music_main_tx);
+        spawn_music(main_audio_rx, audio_main_tx);
         spawn_input(input_main_tx);
+
+        let Message::CurrentVolume(volume) = audio_main_rx.recv().unwrap() else {
+            unreachable!()
+        };
 
         App {
             player,
-            audio_tx: main_music_tx,
-            audio_rx: music_main_rx,
+            volume,
+            audio_tx: main_audio_tx,
+            audio_rx: audio_main_rx,
             input_rx: input_main_rx,
             should_exit: false,
         }
@@ -56,19 +62,27 @@ impl App {
                 })
                 .expect("failed to draw frame");
 
-            crossbeam_channel::select_biased! {
-                recv(self.audio_rx) -> msg => {
-                    let msg = msg.unwrap();
-                    match msg {
-                        Message::TrackEnded => {
-                            self.player.unset_current();
-                        }
-                    };
-                }
-                recv(self.input_rx) -> event => {
-                    self.handle_event(event.unwrap());
-                }
-            };
+            loop {
+                crossbeam_channel::select_biased! {
+                    recv(self.audio_rx) -> msg => {
+                        let msg = msg.unwrap();
+                        match msg {
+                            Message::TrackEnded => {
+                                self.player.unset_current();
+                                break;
+                            },
+                            Message::CurrentVolume(vol) => {
+                                self.volume = vol;
+                                break;
+                            }
+                        };
+                    }
+                    recv(self.input_rx) -> event => {
+                        self.handle_event(event.unwrap());
+                        break;
+                    }
+                };
+            }
 
             if self.should_exit() {
                 break;
@@ -80,19 +94,36 @@ impl App {
         match ev {
             Event::Key(k) => {
                 let keycode = k.code;
-                let _modefier = k.modifiers;
+                let modifiers = k.modifiers;
 
                 match keycode {
                     KeyCode::Esc => self.should_exit = true,
                     KeyCode::Char('k') => {
-                        self.player
-                            .set_cursor(self.player.cursor().saturating_sub(1));
+                        match modifiers {
+                            KeyModifiers::CONTROL => {
+                                let vol = 0.05;
+                                self.audio_tx.send(Command::VolumeUp(vol)).unwrap();
+                            }
+                            KeyModifiers::NONE => {
+                                self.player
+                                    .set_cursor(self.player.cursor().saturating_sub(1));
+                            }
+                            _ => (),
+                        };
                     }
                     KeyCode::Char('j') => {
-                        let new_y = self.player.cursor() + 1;
-                        if self.player.tracks_len() as u16 > new_y {
-                            self.player.set_cursor(new_y);
-                        }
+                        match modifiers {
+                            KeyModifiers::CONTROL => {
+                                self.audio_tx.send(Command::VolumeDown(0.05)).unwrap();
+                            }
+                            KeyModifiers::NONE => {
+                                let new_y = self.player.cursor() + 1;
+                                if self.player.tracks_len() as u16 > new_y {
+                                    self.player.set_cursor(new_y);
+                                }
+                            }
+                            _ => (),
+                        };
                     }
                     KeyCode::Enter => {
                         self.player.set_current(self.player.track_under_cursor());
@@ -124,16 +155,19 @@ impl Widget for &mut App {
     where
         Self: Sized,
     {
-        let [header, main] = Layout::new(
+        let [header_area, main_area] = Layout::new(
             Direction::Vertical,
             [Constraint::Length(2), Constraint::Length(4)],
         )
         .areas(area);
 
-        let head = Line::raw(self.player.get_current().unwrap_or("No track"));
+        let current = Line::raw(self.player.get_current().unwrap_or("No track"));
+        let vol = Line::raw(format!("Volume: {:.0}%", self.volume * 100.0));
 
-        head.render(header, buf);
+        let header = Text::from_iter(vec![current, vol]);
 
-        self.player.render(main, buf);
+        header.render(header_area, buf);
+
+        self.player.render(main_area, buf);
     }
 }
