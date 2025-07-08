@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::{io::BufReader, time::Duration};
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{Receiver, RecvError, Sender};
 
 use ratatui::{
     Terminal,
@@ -10,6 +10,7 @@ use ratatui::{
     text::{Line, Text},
     widgets::Widget,
 };
+use rodio::Source;
 
 use crate::{
     input::spawn_input,
@@ -21,6 +22,8 @@ pub struct App {
     player: Player,
     should_exit: bool,
     volume: f32,
+
+    progress: Option<f32>,
 
     pub audio_tx: Sender<Command>,
     pub audio_rx: Receiver<Message>,
@@ -45,6 +48,7 @@ impl App {
         App {
             player,
             volume,
+            progress: None,
             audio_tx: main_audio_tx,
             audio_rx: audio_main_rx,
             input_rx: input_main_rx,
@@ -68,16 +72,36 @@ impl App {
                 crossbeam_channel::select_biased! {
                     recv(self.audio_rx) -> msg => {
                         let msg = msg.unwrap();
-                        match msg {
-                            Message::TrackEnded => {
-                                self.player.unset_current();
-                                break;
-                            },
-                            Message::CurrentVolume(vol) => {
-                                self.volume = vol;
-                                break;
-                            }
+
+                        let mut handle = |msg: Message| {
+                            match msg {
+                                Message::TrackEnded => {
+                                    self.player.unset_current();
+                                },
+                                Message::CurrentVolume(vol) => {
+                                    self.volume = vol;
+                                }
+                                Message::CurrentPos(pos) => {
+                                    let dur = self.player.get_current_duration();
+                                    match dur {
+                                        Some(dur) => {
+                                            self.progress = Some((pos.as_millis() as f32) / (dur.as_millis() as f32));
+                                        },
+                                        None => {}
+                                    }
+                                }
+                            };
                         };
+
+                        eprintln!("{:#?}", msg);
+
+                        handle(msg);
+
+                        for msg in self.audio_rx.try_iter() {
+                            handle(msg)
+                        }
+
+                        break;
                     }
                     recv(self.input_rx) -> event => {
                         self.handle_event(event.unwrap());
@@ -144,17 +168,23 @@ impl App {
                         _ => {}
                     },
                     KeyCode::Enter => {
-                        self.player.set_current(self.player.track_under_cursor());
+                        let path = self.player.track_under_cursor();
+                        let file = std::fs::File::open(path).unwrap();
+                        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
 
-                        self.audio_tx
-                            .send(Command::play(self.player.get_current().unwrap()))
-                            .unwrap();
+                        self.player.set_current(
+                            self.player.track_under_cursor(),
+                            source.total_duration().unwrap_or(Duration::from_secs(0)),
+                        );
+
+                        self.audio_tx.send(Command::play(source)).unwrap();
                     }
                     KeyCode::Char(' ') => {
                         if self.player.is_paused() {
                             self.audio_tx.send(Command::pause()).unwrap();
                             self.player.set_is_paused(false);
                         } else {
+                            eprintln!("????");
                             self.audio_tx.send(Command::resume()).unwrap();
                             self.player.set_is_paused(true);
                         }
@@ -173,16 +203,60 @@ impl Widget for &mut App {
     where
         Self: Sized,
     {
-        let [header_area, main_area] = Layout::new(
+        let [header_area, main_area, control_area] = Layout::new(
             Direction::Vertical,
-            [Constraint::Length(2), Constraint::Length(4)],
+            [
+                Constraint::Length(2),
+                Constraint::Fill(1),
+                Constraint::Length(2),
+            ],
         )
         .areas(area);
 
-        let current = Line::raw(self.player.get_current().unwrap_or("No track"));
+        let current = Line::raw(self.player.get_current_path().unwrap_or("No track"));
         let vol = Line::raw(format!("Volume: {:.0}%", self.volume * 100.0));
 
         let header = Text::from_iter(vec![current, vol]);
+
+        let [buttons_area, progress_area] = Layout::new(
+            Direction::Vertical,
+            [Constraint::Length(1), Constraint::Length(1)],
+        )
+        .areas(control_area);
+
+        let [_, progress_area, _] = Layout::new(
+            Direction::Horizontal,
+            [
+                Constraint::Fill(1),
+                Constraint::Fill(8),
+                Constraint::Fill(1),
+            ],
+        )
+        .areas(progress_area);
+
+        {
+            let width = progress_area.width;
+            let progress = match self.progress {
+                Some(progress) => progress * 100.0,
+                None => 0.0,
+            };
+
+            let one_cell_rat = 100.0 / width as f32;
+
+            let till = (progress / one_cell_rat).round() as u16;
+            for x in 0..width {
+                let cell = buf
+                    .cell_mut((progress_area.x + x, progress_area.y))
+                    .unwrap();
+                if x < till {
+                    cell.set_char('#');
+                } else {
+                    cell.set_char('_');
+                }
+            }
+        };
+
+        Line::raw(format!("{:?}", self.progress)).render(buttons_area, buf);
 
         header.render(header_area, buf);
 

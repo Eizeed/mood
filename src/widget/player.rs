@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use ratatui::widgets::{List, ListItem, Widget};
 
 use super::Cursor;
 
 pub struct Player {
     tracks: Vec<String>,
-    current: Option<String>,
+    current: Option<(String, Duration)>,
     cursor: Cursor,
     is_paused: bool,
 }
@@ -38,12 +40,16 @@ impl Player {
         self.tracks[self.cursor.y as usize].clone()
     }
 
-    pub fn get_current(&self) -> Option<&str> {
-        self.current.as_ref().map(|s| s.as_str())
+    pub fn get_current_path(&self) -> Option<&str> {
+        self.current.as_ref().map(|s| s.0.as_str())
     }
 
-    pub fn set_current(&mut self, str: String) {
-        self.current = Some(str)
+    pub fn get_current_duration(&self) -> Option<Duration> {
+        self.current.as_ref().map(|s| s.1)
+    }
+
+    pub fn set_current(&mut self, str: String, duration: Duration) {
+        self.current = Some((str, duration))
     }
 
     pub fn unset_current(&mut self) {
