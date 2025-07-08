@@ -1,4 +1,4 @@
-use std::{io::BufReader, path::PathBuf};
+use std::{io::BufReader, path::PathBuf, time::Duration};
 
 use crossbeam_channel::{Receiver, Sender};
 use rodio::{OutputStream, Sink, Source};
@@ -9,6 +9,8 @@ pub enum Command {
     Resume,
     VolumeUp(f32),
     VolumeDown(f32),
+    SeekForward(Duration),
+    SeekBackward(Duration),
 }
 
 impl Command {
@@ -76,6 +78,9 @@ where
     fn total_duration(&self) -> Option<std::time::Duration> {
         self.inner.total_duration()
     }
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.inner.try_seek(pos)
+    }
 }
 
 pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
@@ -125,6 +130,15 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                     }
 
                     tx.send(Message::CurrentVolume(sink.volume())).unwrap();
+                }
+                Command::SeekForward(duration) => {
+                    let pos = sink.get_pos();
+                    sink.try_seek(pos + duration).unwrap();
+                }
+                Command::SeekBackward(duration) => {
+                    let pos = sink.get_pos();
+                    let new_pos = pos.saturating_sub(duration);
+                    sink.try_seek(new_pos).unwrap();
                 }
             }
         }

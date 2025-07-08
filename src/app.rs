@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crossbeam_channel::{Receiver, Sender};
 
 use ratatui::{
@@ -125,6 +127,22 @@ impl App {
                             _ => (),
                         };
                     }
+                    KeyCode::Char('h') => match modifiers {
+                        KeyModifiers::CONTROL => {
+                            self.audio_tx
+                                .send(Command::SeekBackward(Duration::from_secs(5)))
+                                .unwrap();
+                        }
+                        _ => {}
+                    },
+                    KeyCode::Char('l') => match modifiers {
+                        KeyModifiers::CONTROL => {
+                            self.audio_tx
+                                .send(Command::SeekForward(Duration::from_secs(5)))
+                                .unwrap();
+                        }
+                        _ => {}
+                    },
                     KeyCode::Enter => {
                         self.player.set_current(self.player.track_under_cursor());
 
