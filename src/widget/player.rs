@@ -46,6 +46,10 @@ impl Player {
         self.current = Some(str)
     }
 
+    pub fn unset_current(&mut self) {
+        self.current = None;
+    }
+
     pub fn cursor(&self) -> u16 {
         self.cursor.y
     }

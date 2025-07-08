@@ -1,33 +1,19 @@
-use crossterm::event;
-use ratatui::widgets::Widget;
-
 use crate::{app::App, widget::Player};
 
 mod app;
+mod input;
 mod music;
 mod widget;
 
 fn main() {
-    let mut terminal = ratatui::init();
+    let terminal = ratatui::init();
 
     // TODO: Parse config for dir in here
     // else use $HOME/music dir
     let player = Player::new("/home/lf/music");
 
-    let mut app = App::with_player(player);
+    let app = App::with_player(player);
+    app.start(terminal);
 
-    loop {
-        terminal
-            .draw(|f| {
-                app.render(f.area(), f.buffer_mut());
-            })
-            .expect("failed to draw frame");
-
-        app.handle_event(event::read().unwrap());
-
-        if app.should_exit() {
-            break;
-        }
-    }
     ratatui::restore();
 }
