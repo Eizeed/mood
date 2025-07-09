@@ -26,9 +26,36 @@ impl Command {
     pub fn resume() -> Self {
         Command::Resume
     }
-
     pub fn pause() -> Self {
         Command::Pause
+    }
+
+    pub fn volume_up<T>(vol: T) -> Self
+    where
+        T: Into<f32>,
+    {
+        Self::VolumeUp(vol.into())
+    }
+
+    pub fn volume_down<T>(vol: T) -> Self
+    where
+        T: Into<f32>,
+    {
+        Self::VolumeDown(vol.into())
+    }
+
+    pub fn seek_forward<T>(dur: T) -> Self
+    where
+        T: Into<Duration>,
+    {
+        Self::SeekForward(dur.into())
+    }
+
+    pub fn seek_backward<T>(dur: T) -> Self
+    where
+        T: Into<Duration>,
+    {
+        Self::SeekBackward(dur.into())
     }
 }
 
@@ -95,6 +122,11 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
         tx.send(Message::CurrentVolume(sink.volume())).unwrap();
 
         loop {
+            if sink.empty() {
+                sink.stop();
+                eprintln!("Stopping sink");
+            }
+
             let command = match rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(command) => command,
                 Err(err) => match err {
@@ -116,8 +148,9 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                     };
 
                     sink.stop();
-                    sink.play();
                     sink.append(source);
+                    sink.play();
+                    tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
                 }
                 Command::Pause => {
                     sink.pause();
@@ -146,9 +179,13 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                 }
                 Command::SeekForward(duration) => {
                     let pos = sink.get_pos();
-                    sink.pause();
+                    eprintln!(
+                        "Seeking forward. pos: {:.2}, is_empty: {}",
+                        pos.as_secs_f32(),
+                        sink.empty()
+                    );
+
                     sink.try_seek(pos + duration).unwrap();
-                    sink.play();
 
                     tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
                 }
@@ -156,9 +193,14 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                     let pos = sink.get_pos();
                     let new_pos = pos.saturating_sub(duration);
 
-                    sink.pause();
+
+                    eprintln!(
+                        "Seeking backward. pos: {:.2}, is_empty: {}",
+                        pos.as_secs_f32(),
+                        sink.empty()
+                    );
+
                     sink.try_seek(new_pos).unwrap();
-                    sink.play();
 
                     tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
                 }

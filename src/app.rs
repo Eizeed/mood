@@ -1,4 +1,4 @@
-use std::{io::BufReader, time::Duration};
+use std::{io::BufReader, ops::ControlFlow, time::Duration};
 
 use crossbeam_channel::{Receiver, RecvError, Sender};
 
@@ -71,37 +71,10 @@ impl App {
             loop {
                 crossbeam_channel::select_biased! {
                     recv(self.audio_rx) -> msg => {
-                        let msg = msg.unwrap();
-
-                        let mut handle = |msg: Message| {
-                            match msg {
-                                Message::TrackEnded => {
-                                    self.player.unset_current();
-                                },
-                                Message::CurrentVolume(vol) => {
-                                    self.volume = vol;
-                                }
-                                Message::CurrentPos(pos) => {
-                                    let dur = self.player.get_current_duration();
-                                    match dur {
-                                        Some(dur) => {
-                                            self.progress = Some((pos.as_millis() as f32) / (dur.as_millis() as f32));
-                                        },
-                                        None => {}
-                                    }
-                                }
-                            };
-                        };
-
-                        eprintln!("{:#?}", msg);
-
-                        handle(msg);
-
-                        for msg in self.audio_rx.try_iter() {
-                            handle(msg)
+                        match self.handle_audio_rx(msg) {
+                            ControlFlow::Break(()) => break,
+                            _ => {}
                         }
-
-                        break;
                     }
                     recv(self.input_rx) -> event => {
                         self.handle_event(event.unwrap());
@@ -175,17 +148,17 @@ impl App {
                         self.player.set_current(
                             self.player.track_under_cursor(),
                             source.total_duration().unwrap_or(Duration::from_secs(0)),
+                            self.player.cursor(),
                         );
 
                         self.audio_tx.send(Command::play(source)).unwrap();
                     }
                     KeyCode::Char(' ') => {
                         if self.player.is_paused() {
-                            self.audio_tx.send(Command::pause()).unwrap();
+                            self.audio_tx.send(Command::resume()).unwrap();
                             self.player.set_is_paused(false);
                         } else {
-                            eprintln!("????");
-                            self.audio_tx.send(Command::resume()).unwrap();
+                            self.audio_tx.send(Command::pause()).unwrap();
                             self.player.set_is_paused(true);
                         }
                     }
@@ -195,6 +168,56 @@ impl App {
             Event::Mouse(_m) => {}
             _ => {}
         }
+    }
+
+    fn handle_audio_rx(&mut self, msg: Result<Message, RecvError>) -> ControlFlow<()> {
+        let msg = msg.unwrap();
+
+        let mut handle = |msg: Message| {
+            match msg {
+                Message::TrackEnded => {
+                    let curr = self.player.get_current().unwrap();
+
+                    let index = if curr.index >= self.player.tracks_len() - 1 {
+                        0
+                    } else {
+                        curr.index + 1
+                    };
+
+                    let path = self.player.tracks()[index].clone();
+                    let file = std::fs::File::open(&path).unwrap();
+                    let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+                    let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
+
+
+                    self.audio_tx.send(Command::play(source)).unwrap();
+
+                    self.progress = Some(0.0);
+                    self.player.set_current(path, duration, index);
+                }
+                Message::CurrentVolume(vol) => {
+                    self.volume = vol;
+                }
+                Message::CurrentPos(pos) => {
+                    let dur = self.player.get_current_duration();
+                    match dur {
+                        Some(dur) => {
+                            self.progress =
+                                Some((pos.as_millis() as f32) / (dur.as_millis() as f32));
+                        }
+                        None => {}
+                    }
+                }
+            };
+        };
+
+        handle(msg);
+
+        for msg in self.audio_rx.try_iter() {
+            handle(msg)
+        }
+
+        ControlFlow::Break(())
     }
 }
 

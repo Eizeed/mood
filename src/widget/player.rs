@@ -6,7 +6,7 @@ use super::Cursor;
 
 pub struct Player {
     tracks: Vec<String>,
-    current: Option<(String, Duration)>,
+    current: Option<CurrentTrack>,
     cursor: Cursor,
     is_paused: bool,
 }
@@ -32,6 +32,10 @@ impl Player {
         }
     }
 
+    pub fn tracks(&self) -> &[String] {
+        &self.tracks
+    }
+
     pub fn tracks_len(&self) -> usize {
         self.tracks.len()
     }
@@ -41,15 +45,27 @@ impl Player {
     }
 
     pub fn get_current_path(&self) -> Option<&str> {
-        self.current.as_ref().map(|s| s.0.as_str())
+        self.current.as_ref().map(|s| s.path.as_str())
     }
 
     pub fn get_current_duration(&self) -> Option<Duration> {
-        self.current.as_ref().map(|s| s.1)
+        self.current.as_ref().map(|s| s.duration)
     }
 
-    pub fn set_current(&mut self, str: String, duration: Duration) {
-        self.current = Some((str, duration))
+    pub fn get_current_index(&self) -> Option<usize> {
+        self.current.as_ref().map(|c| c.index)
+    }
+
+    pub fn get_current(&self) -> Option<&CurrentTrack> {
+        self.current.as_ref()
+    }
+
+    pub fn set_current<T: Into<usize>>(&mut self, str: String, duration: Duration, index: T) {
+        self.current = Some(CurrentTrack {
+            path: str.into(),
+            duration,
+            index: index.into(),
+        })
     }
 
     pub fn unset_current(&mut self) {
@@ -88,4 +104,11 @@ impl Widget for &mut Player {
 
         self.cursor.render(area, buf);
     }
+}
+
+#[derive(Debug)]
+pub struct CurrentTrack {
+    pub path: String,
+    pub duration: Duration,
+    pub index: usize,
 }
