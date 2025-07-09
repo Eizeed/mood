@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufReader, time::Duration};
+use std::{fmt::Debug, fs::File, io::BufReader, time::Duration};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use rodio::{Decoder, OutputStream, Sink, Source};
@@ -13,6 +13,20 @@ pub enum Command {
 
     SeekForward(Duration),
     SeekBackward(Duration),
+}
+
+impl Debug for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Command::Play(_) => f.write_str("Play"),
+            Command::Pause => f.write_str("Pause"),
+            Command::Resume => f.write_str("Resume"),
+            Command::VolumeUp(_) => f.write_str("VolumeUp"),
+            Command::VolumeDown(_) => f.write_str("VolumeDown"),
+            Command::SeekForward(_) => f.write_str("SeekForward"),
+            Command::SeekBackward(_) => f.write_str("SeekBackward"),
+        }
+    }
 }
 
 impl Command {
@@ -61,9 +75,15 @@ impl Command {
 
 #[derive(Debug)]
 pub enum Message {
-    TrackEnded,
+    TrackEnded(Method),
     CurrentVolume(f32),
     CurrentPos(Duration),
+}
+
+#[derive(Debug)]
+pub enum Method {
+    Normal,
+    Seek,
 }
 
 struct NotifySource<T>
@@ -85,7 +105,9 @@ where
         let next = self.inner.next();
 
         if let None = next {
-            self.main_handle.send(Message::TrackEnded).unwrap();
+            self.main_handle
+                .send(Message::TrackEnded(Method::Normal))
+                .unwrap();
         }
 
         next
@@ -124,7 +146,6 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
         loop {
             if sink.empty() {
                 sink.stop();
-                eprintln!("Stopping sink");
             }
 
             let command = match rx.recv_timeout(Duration::from_millis(500)) {
@@ -147,17 +168,34 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                         main_handle: tx.clone(),
                     };
 
-                    sink.stop();
+                    sink.clear();
                     sink.append(source);
                     sink.play();
+
+                    // Min is 27ms.
+                    // This one is driving me crazy.
+                    // Sink.position is mutex. It has some delay
+                    // on apped function. It locks control and copies it
+                    // in new source and so if i call get_pos() instantly
+                    // it will give me old pos...
+                    //
+                    // TODO: Oneday get rid of this
+                    // Write a fork or use something like
+                    // Symphonia and cpal
+                    std::thread::sleep(Duration::from_millis(50));
+
                     tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
                 }
                 Command::Pause => {
-                    sink.pause();
+                    if !sink.empty() {
+                        sink.pause();
+                    }
                 }
                 Command::Resume => {
-                    sink.play();
-                    tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
+                    if !sink.empty() {
+                        sink.play();
+                        tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
+                    }
                 }
                 Command::VolumeUp(vol) => {
                     if sink.volume() + vol >= 1.0 {
@@ -179,30 +217,29 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                 }
                 Command::SeekForward(duration) => {
                     let pos = sink.get_pos();
-                    eprintln!(
-                        "Seeking forward. pos: {:.2}, is_empty: {}",
-                        pos.as_secs_f32(),
-                        sink.empty()
-                    );
 
-                    sink.try_seek(pos + duration).unwrap();
+                    if !sink.empty() {
+                        // if pos <= max_duration {
+                        sink.try_seek(pos + duration).unwrap();
 
-                    tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
+                        tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
+
+                        if sink.empty() {
+                            tx.send(Message::TrackEnded(Method::Seek)).unwrap();
+                            sink.clear();
+                        }
+                        // }
+                    }
                 }
                 Command::SeekBackward(duration) => {
-                    let pos = sink.get_pos();
-                    let new_pos = pos.saturating_sub(duration);
+                    if !sink.empty() {
+                        let pos = sink.get_pos();
+                        let new_pos = pos.saturating_sub(duration);
 
+                        sink.try_seek(new_pos).unwrap();
 
-                    eprintln!(
-                        "Seeking backward. pos: {:.2}, is_empty: {}",
-                        pos.as_secs_f32(),
-                        sink.empty()
-                    );
-
-                    sink.try_seek(new_pos).unwrap();
-
-                    tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
+                        tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
+                    }
                 }
             }
         }

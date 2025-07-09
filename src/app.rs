@@ -14,7 +14,7 @@ use rodio::Source;
 
 use crate::{
     input::spawn_input,
-    music::{Command, Message, spawn_music},
+    music::{spawn_music, Command, Message, Method},
     widget::Player,
 };
 
@@ -175,7 +175,10 @@ impl App {
 
         let mut handle = |msg: Message| {
             match msg {
-                Message::TrackEnded => {
+                Message::TrackEnded(method) => {
+                    if let Method::Seek = method {
+                        return
+                    };
                     let curr = self.player.get_current().unwrap();
 
                     let index = if curr.index >= self.player.tracks_len() - 1 {
@@ -189,8 +192,8 @@ impl App {
                     let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
                     let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
 
-
                     self.audio_tx.send(Command::play(source)).unwrap();
+                    self.audio_rx.recv().unwrap();
 
                     self.progress = Some(0.0);
                     self.player.set_current(path, duration, index);
