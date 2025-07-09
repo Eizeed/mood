@@ -14,8 +14,8 @@ use rodio::Source;
 
 use crate::{
     input::spawn_input,
-    music::{spawn_music, Command, Message, Method},
-    widget::Player,
+    music::{Command, Message, Method, spawn_music},
+    widget::{Player, player::Track},
 };
 
 pub struct App {
@@ -140,6 +140,14 @@ impl App {
                         }
                         _ => {}
                     },
+                    KeyCode::Char('q') => {
+                        let track = self.player.track_under_cursor().clone();
+                        let index = self.player.cursor();
+                        self.player.queue_mut().push_back(Track {
+                            path: track,
+                            index: index as usize,
+                        });
+                    }
                     KeyCode::Enter => {
                         let path = self.player.track_under_cursor();
                         let file = std::fs::File::open(path).unwrap();
@@ -150,6 +158,8 @@ impl App {
                             source.total_duration().unwrap_or(Duration::from_secs(0)),
                             self.player.cursor(),
                         );
+
+                        self.player.set_index(self.player.cursor() as usize);
 
                         self.audio_tx.send(Command::play(source)).unwrap();
                     }
@@ -176,27 +186,44 @@ impl App {
         let mut handle = |msg: Message| {
             match msg {
                 Message::TrackEnded(method) => {
+                    // I don't know why i need to send
+                    // Method::Seek but it works
                     if let Method::Seek = method {
-                        return
+                        return;
                     };
-                    let curr = self.player.get_current().unwrap();
 
-                    let index = if curr.index >= self.player.tracks_len() - 1 {
-                        0
+                    if self.player.queue_mut().is_empty() {
+                        if self.player.index().unwrap() >= self.player.tracks_len() - 1 {
+                            self.player.set_index(0);
+                        } else {
+                            self.player.set_index(self.player.index().unwrap() + 1);
+                        };
+
+                        let index = self.player.index().unwrap();
+
+                        let path = self.player.tracks()[index].clone();
+                        let file = std::fs::File::open(&path).unwrap();
+                        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+                        let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
+
+                        self.audio_tx.send(Command::play(source)).unwrap();
+                        self.audio_rx.recv().unwrap();
+
+                        self.progress = Some(0.0);
+                        self.player.set_current(path, duration, index);
                     } else {
-                        curr.index + 1
-                    };
+                        let next_track = self.player.queue_mut().pop_front().unwrap();
+                        let file = std::fs::File::open(&next_track.path).unwrap();
+                        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+                        let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
 
-                    let path = self.player.tracks()[index].clone();
-                    let file = std::fs::File::open(&path).unwrap();
-                    let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
-                    let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
+                        self.audio_tx.send(Command::play(source)).unwrap();
+                        self.audio_rx.recv().unwrap();
 
-                    self.audio_tx.send(Command::play(source)).unwrap();
-                    self.audio_rx.recv().unwrap();
-
-                    self.progress = Some(0.0);
-                    self.player.set_current(path, duration, index);
+                        self.progress = Some(0.0);
+                        self.player
+                            .set_current(next_track.path, duration, next_track.index);
+                    }
                 }
                 Message::CurrentVolume(vol) => {
                     self.volume = vol;

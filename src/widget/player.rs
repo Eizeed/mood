@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 
 use ratatui::widgets::{List, ListItem, Widget};
 
@@ -6,7 +6,9 @@ use super::Cursor;
 
 pub struct Player {
     tracks: Vec<String>,
+    index: Option<usize>,
     current: Option<CurrentTrack>,
+    queue: VecDeque<Track>,
     cursor: Cursor,
     is_paused: bool,
 }
@@ -27,9 +29,15 @@ impl Player {
         Player {
             tracks: names,
             current: None,
+            index: None,
+            queue: VecDeque::new(),
             cursor: Cursor::new(),
             is_paused: false,
         }
+    }
+
+    pub fn queue_mut(&mut self) -> &mut VecDeque<Track> {
+        &mut self.queue
     }
 
     pub fn tracks(&self) -> &[String] {
@@ -87,6 +95,14 @@ impl Player {
     pub fn set_is_paused(&mut self, is_paused: bool) {
         self.is_paused = is_paused;
     }
+
+    pub fn index(&self) -> Option<usize> {
+        self.index
+    }
+
+    pub fn set_index(&mut self, index: usize) {
+        self.index = Some(index);
+    }
 }
 
 impl Widget for &mut Player {
@@ -110,5 +126,11 @@ impl Widget for &mut Player {
 pub struct CurrentTrack {
     pub path: String,
     pub duration: Duration,
+    pub index: usize,
+}
+
+#[derive(Debug)]
+pub struct Track {
+    pub path: String,
     pub index: usize,
 }

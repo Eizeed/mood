@@ -182,7 +182,12 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                     // TODO: Oneday get rid of this
                     // Write a fork or use something like
                     // Symphonia and cpal
-                    std::thread::sleep(Duration::from_millis(50));
+                    // std::thread::sleep(Duration::from_millis(50));
+
+                    // Maybe speen a loop a bit
+                    while sink.get_pos() > Duration::from_millis(500) {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
 
                     tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
                 }
@@ -215,6 +220,8 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
 
                     tx.send(Message::CurrentVolume(sink.volume())).unwrap();
                 }
+                // TODO: Sometimes when it fires it will send track ended
+                // but main thread won't do anything. UI freezes and inputs are not readen
                 Command::SeekForward(duration) => {
                     let pos = sink.get_pos();
 
