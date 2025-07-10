@@ -142,23 +142,13 @@ impl App {
                     }
                     KeyCode::Char('h') => match modifiers {
                         KeyModifiers::CONTROL => {
-                            if self.start_timer.elapsed() < Duration::from_millis(100) {
-                                return;
-                            }
-                            self.audio_tx
-                                .send(Command::SeekBackward(Duration::from_secs(5)))
-                                .unwrap();
+                            self.seek_backward(Duration::from_secs(5));
                         }
                         _ => {}
                     },
                     KeyCode::Char('l') => match modifiers {
                         KeyModifiers::CONTROL => {
-                            if self.start_timer.elapsed() < Duration::from_millis(100) {
-                                return;
-                            }
-                            self.audio_tx
-                                .send(Command::SeekForward(Duration::from_secs(5)))
-                                .unwrap();
+                            self.seek_forward(Duration::from_secs(5));
                         }
                         _ => {}
                     },
@@ -172,25 +162,11 @@ impl App {
                     }
                     KeyCode::Enter => {
                         let path = self.player.track_under_cursor();
-                        let file = std::fs::File::open(&path).unwrap();
-                        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+                        let index = self.player.cursor() as usize;
 
-                        self.player.set_current(
-                            self.player.track_under_cursor(),
-                            source.total_duration().unwrap_or(Duration::from_secs(0)),
-                            self.player.cursor(),
-                        );
+                        self.player.set_index(index);
 
-                        self.player.set_index(self.player.cursor() as usize);
-
-                        self.audio_tx.send(Command::play(source)).unwrap();
-                        self.start_timer = Instant::now();
-
-                        let p = Path::new(&path);
-                        let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or(&path);
-
-                        self.control_bar.name = name.to_string();
-                        self.control_bar.progress = Some(0.0);
+                        self.set_audio(path, index);
                     }
                     KeyCode::Char(' ') => {
                         if self.player.is_paused() {
@@ -217,12 +193,7 @@ impl App {
                                 }
 
                                 if self.control_bar.seek_backward().contains(&x) {
-                                    if self.start_timer.elapsed() < Duration::from_millis(100) {
-                                        return;
-                                    }
-                                    self.audio_tx
-                                        .send(Command::SeekBackward(Duration::from_secs(5)))
-                                        .unwrap();
+                                    self.seek_backward(Duration::from_secs(5));
                                 }
 
                                 if self.control_bar.pause().contains(&x) {
@@ -236,12 +207,7 @@ impl App {
                                 }
 
                                 if self.control_bar.seek_forward().contains(&x) {
-                                    if self.start_timer.elapsed() < Duration::from_millis(100) {
-                                        return;
-                                    }
-                                    self.audio_tx
-                                        .send(Command::SeekForward(Duration::from_secs(5)))
-                                        .unwrap();
+                                    self.seek_forward(Duration::from_secs(5));
                                 }
 
                                 if self.control_bar.repeat().contains(&x) {
@@ -261,63 +227,85 @@ impl App {
     fn handle_audio_rx(&mut self, msg: Result<Message, RecvError>) -> ControlFlow<()> {
         let msg = msg.unwrap();
 
-        let mut handle = |msg: Message| {
-            match msg {
-                Message::TrackEnded => {
-                    let (path, index) = if self.player.queue_mut().is_empty() {
-                        if self.player.index().unwrap() >= self.player.tracks_len() - 1 {
-                            self.player.set_index(0);
-                        } else {
-                            self.player.set_index(self.player.index().unwrap() + 1);
-                        };
+        self.handle_message(msg);
 
-                        let index = self.player.index().unwrap();
-                        let path = self.player.tracks()[index].clone();
-
-                        (path, index)
-                    } else {
-                        let next_track = self.player.queue_mut().pop_front().unwrap();
-                        (next_track.path, next_track.index)
-                    };
-
-                    let file = std::fs::File::open(&path).unwrap();
-                    let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
-                    let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
-
-                    self.audio_tx.send(Command::play(source)).unwrap();
-                    self.start_timer = Instant::now();
-
-                    let p = Path::new(&path);
-                    let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or(&path);
-
-                    self.control_bar.name = name.to_string();
-
-                    self.control_bar.progress = Some(0.0);
-                    self.player.set_current(path, duration, index);
-                }
-                Message::CurrentVolume(vol) => {
-                    self.volume = vol;
-                }
-                Message::CurrentPos(pos) => {
-                    let dur = self.player.get_current_duration();
-                    match dur {
-                        Some(dur) => {
-                            self.control_bar.progress =
-                                Some((pos.as_millis() as f32) / (dur.as_millis() as f32));
-                        }
-                        None => {}
-                    }
-                }
-            };
-        };
-
-        handle(msg);
-
-        for msg in self.audio_rx.try_iter() {
-            handle(msg)
+        for msg in self.audio_rx.clone().try_iter() {
+            self.handle_message(msg)
         }
 
         ControlFlow::Break(())
+    }
+
+    fn handle_message(&mut self, message: Message) {
+        match message {
+            Message::TrackEnded => {
+                let (path, index) = if self.player.queue_mut().is_empty() {
+                    if self.player.index().unwrap() >= self.player.tracks_len() - 1 {
+                        self.player.set_index(0);
+                    } else {
+                        self.player.set_index(self.player.index().unwrap() + 1);
+                    };
+
+                    let index = self.player.index().unwrap();
+                    let path = self.player.tracks()[index].clone();
+
+                    (path, index)
+                } else {
+                    let next_track = self.player.queue_mut().pop_front().unwrap();
+                    (next_track.path, next_track.index)
+                };
+
+                self.set_audio(path, index);
+            }
+            Message::CurrentVolume(vol) => {
+                self.volume = vol;
+            }
+            Message::CurrentPos(pos) => {
+                let dur = self.player.get_current_duration();
+                match dur {
+                    Some(dur) => {
+                        self.control_bar.progress =
+                            Some((pos.as_millis() as f32) / (dur.as_millis() as f32));
+                    }
+                    None => {}
+                }
+            }
+        };
+    }
+
+    pub fn set_audio<T: AsRef<Path>>(&mut self, path: T, index: usize) {
+        let file = std::fs::File::open(&path).unwrap();
+        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+        let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
+
+        self.audio_tx.send(Command::play(source)).unwrap();
+        self.start_timer = Instant::now();
+
+        let name = path
+            .as_ref()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path.as_ref().to_str().unwrap());
+
+        self.control_bar.name = name.to_string();
+
+        self.control_bar.progress = Some(0.0);
+        self.player
+            .set_current(path.as_ref().to_str().unwrap().to_string(), duration, index);
+    }
+
+    pub fn seek_backward(&mut self, duration: Duration) {
+        if self.start_timer.elapsed() < Duration::from_millis(100) {
+            return;
+        }
+        self.audio_tx.send(Command::SeekBackward(duration)).unwrap();
+    }
+
+    pub fn seek_forward(&mut self, duration: Duration) {
+        if self.start_timer.elapsed() < Duration::from_millis(100) {
+            return;
+        }
+        self.audio_tx.send(Command::SeekForward(duration)).unwrap();
     }
 }
 
