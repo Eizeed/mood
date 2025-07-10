@@ -12,12 +12,8 @@ use ratatui::crossterm::event::{self, Event};
 pub fn spawn_input(tx: Sender<Event>) {
     std::thread::spawn(move || {
         loop {
-            // select! {
-            //     default(Duration::from_millis(100)) => {
             let event = event::read().unwrap();
             let Ok(_) = tx.send(event) else { return };
-            //     }
-            // }
         }
     });
 }

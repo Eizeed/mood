@@ -1,4 +1,8 @@
-use std::{io::BufReader, ops::ControlFlow, time::Duration};
+use std::{
+    io::BufReader,
+    ops::ControlFlow,
+    time::{Duration, Instant},
+};
 
 use crossbeam_channel::{Receiver, RecvError, Sender};
 
@@ -14,7 +18,7 @@ use rodio::Source;
 
 use crate::{
     input::spawn_input,
-    music::{Command, Message, Method, spawn_music},
+    music::{Command, Message, spawn_music},
     widget::{Player, player::Track},
 };
 
@@ -25,6 +29,8 @@ pub struct App {
 
     progress: Option<f32>,
 
+    start_timer: Instant,
+
     pub audio_tx: Sender<Command>,
     pub audio_rx: Receiver<Message>,
 
@@ -33,10 +39,10 @@ pub struct App {
 
 impl App {
     pub fn with_player(player: Player) -> Self {
-        let (main_audio_tx, main_audio_rx) = crossbeam_channel::bounded::<Command>(1024);
-        let (audio_main_tx, audio_main_rx) = crossbeam_channel::bounded::<Message>(1024);
+        let (main_audio_tx, main_audio_rx) = crossbeam_channel::bounded::<Command>(64);
+        let (audio_main_tx, audio_main_rx) = crossbeam_channel::bounded::<Message>(64);
 
-        let (input_main_tx, input_main_rx) = crossbeam_channel::bounded::<Event>(1024);
+        let (input_main_tx, input_main_rx) = crossbeam_channel::bounded::<Event>(64);
 
         spawn_music(main_audio_rx, audio_main_tx);
         spawn_input(input_main_tx);
@@ -49,6 +55,7 @@ impl App {
             player,
             volume,
             progress: None,
+            start_timer: Instant::now(),
             audio_tx: main_audio_tx,
             audio_rx: audio_main_rx,
             input_rx: input_main_rx,
@@ -126,6 +133,9 @@ impl App {
                     }
                     KeyCode::Char('h') => match modifiers {
                         KeyModifiers::CONTROL => {
+                            if self.start_timer.elapsed() < Duration::from_millis(100) {
+                                return;
+                            }
                             self.audio_tx
                                 .send(Command::SeekBackward(Duration::from_secs(5)))
                                 .unwrap();
@@ -134,6 +144,9 @@ impl App {
                     },
                     KeyCode::Char('l') => match modifiers {
                         KeyModifiers::CONTROL => {
+                            if self.start_timer.elapsed() < Duration::from_millis(100) {
+                                return;
+                            }
                             self.audio_tx
                                 .send(Command::SeekForward(Duration::from_secs(5)))
                                 .unwrap();
@@ -162,6 +175,7 @@ impl App {
                         self.player.set_index(self.player.cursor() as usize);
 
                         self.audio_tx.send(Command::play(source)).unwrap();
+                        self.start_timer = Instant::now();
                     }
                     KeyCode::Char(' ') => {
                         if self.player.is_paused() {
@@ -185,13 +199,7 @@ impl App {
 
         let mut handle = |msg: Message| {
             match msg {
-                Message::TrackEnded(method) => {
-                    // I don't know why i need to send
-                    // Method::Seek but it works
-                    if let Method::Seek = method {
-                        return;
-                    };
-
+                Message::TrackEnded => {
                     if self.player.queue_mut().is_empty() {
                         if self.player.index().unwrap() >= self.player.tracks_len() - 1 {
                             self.player.set_index(0);
@@ -207,7 +215,7 @@ impl App {
                         let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
 
                         self.audio_tx.send(Command::play(source)).unwrap();
-                        self.audio_rx.recv().unwrap();
+                        self.start_timer = Instant::now();
 
                         self.progress = Some(0.0);
                         self.player.set_current(path, duration, index);
@@ -218,7 +226,6 @@ impl App {
                         let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
 
                         self.audio_tx.send(Command::play(source)).unwrap();
-                        self.audio_rx.recv().unwrap();
 
                         self.progress = Some(0.0);
                         self.player

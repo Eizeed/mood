@@ -75,15 +75,9 @@ impl Command {
 
 #[derive(Debug)]
 pub enum Message {
-    TrackEnded(Method),
+    TrackEnded,
     CurrentVolume(f32),
     CurrentPos(Duration),
-}
-
-#[derive(Debug)]
-pub enum Method {
-    Normal,
-    Seek,
 }
 
 struct NotifySource<T>
@@ -105,8 +99,9 @@ where
         let next = self.inner.next();
 
         if let None = next {
+            eprintln!("TrackEnded callback");
             self.main_handle
-                .send(Message::TrackEnded(Method::Normal))
+                .send(Message::TrackEnded)
                 .unwrap();
         }
 
@@ -149,20 +144,27 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
             }
 
             let command = match rx.recv_timeout(Duration::from_millis(500)) {
-                Ok(command) => command,
-                Err(err) => match err {
-                    RecvTimeoutError::Timeout => {
-                        if !sink.empty() && !sink.is_paused() {
-                            tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
+                Ok(command) => {
+                    eprintln!("Ok: {:?}", command);
+                    command
+                }
+                Err(err) => {
+                    // eprintln!("Error: {}", err);
+                    match err {
+                        RecvTimeoutError::Timeout => {
+                            if !sink.empty() && !sink.is_paused() {
+                                tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
+                            }
+                            continue;
                         }
-                        continue;
+                        RecvTimeoutError::Disconnected => return,
                     }
-                    RecvTimeoutError::Disconnected => return,
-                },
+                }
             };
 
             match command {
                 Command::Play(source) => {
+                    eprintln!("Play command");
                     let source = NotifySource {
                         inner: source,
                         main_handle: tx.clone(),
@@ -182,12 +184,12 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                     // TODO: Oneday get rid of this
                     // Write a fork or use something like
                     // Symphonia and cpal
-                    // std::thread::sleep(Duration::from_millis(50));
+                    std::thread::sleep(Duration::from_millis(50));
 
                     // Maybe speen a loop a bit
-                    while sink.get_pos() > Duration::from_millis(500) {
-                        std::thread::sleep(Duration::from_millis(10));
-                    }
+                    // while sink.get_pos() > Duration::from_millis(500) {
+                    //     std::thread::sleep(Duration::from_millis(10));
+                    // }
 
                     tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
                 }
@@ -223,19 +225,17 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                 // TODO: Sometimes when it fires it will send track ended
                 // but main thread won't do anything. UI freezes and inputs are not readen
                 Command::SeekForward(duration) => {
+                    eprintln!("SeekFroward command");
                     let pos = sink.get_pos();
 
                     if !sink.empty() {
-                        // if pos <= max_duration {
                         sink.try_seek(pos + duration).unwrap();
 
                         tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
 
                         if sink.empty() {
-                            tx.send(Message::TrackEnded(Method::Seek)).unwrap();
                             sink.clear();
                         }
-                        // }
                     }
                 }
                 Command::SeekBackward(duration) => {
