@@ -1,6 +1,7 @@
 use std::{
     io::BufReader,
     ops::ControlFlow,
+    path::Path,
     time::{Duration, Instant},
 };
 
@@ -19,15 +20,14 @@ use rodio::Source;
 use crate::{
     input::spawn_input,
     music::{Command, Message, spawn_music},
-    widget::{Player, player::Track},
+    widget::{ControlBar, Player, player::Track},
 };
 
 pub struct App {
     player: Player,
+    control_bar: ControlBar,
     should_exit: bool,
     volume: f32,
-
-    progress: Option<f32>,
 
     start_timer: Instant,
 
@@ -54,7 +54,7 @@ impl App {
         App {
             player,
             volume,
-            progress: None,
+            control_bar: ControlBar::new(),
             start_timer: Instant::now(),
             audio_tx: main_audio_tx,
             audio_rx: audio_main_rx,
@@ -163,7 +163,7 @@ impl App {
                     }
                     KeyCode::Enter => {
                         let path = self.player.track_under_cursor();
-                        let file = std::fs::File::open(path).unwrap();
+                        let file = std::fs::File::open(&path).unwrap();
                         let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
 
                         self.player.set_current(
@@ -176,6 +176,12 @@ impl App {
 
                         self.audio_tx.send(Command::play(source)).unwrap();
                         self.start_timer = Instant::now();
+
+                        let p = Path::new(&path);
+                        let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or(&path);
+
+                        self.control_bar.name = name.to_string();
+                        self.control_bar.progress = Some(0.0);
                     }
                     KeyCode::Char(' ') => {
                         if self.player.is_paused() {
@@ -200,7 +206,7 @@ impl App {
         let mut handle = |msg: Message| {
             match msg {
                 Message::TrackEnded => {
-                    if self.player.queue_mut().is_empty() {
+                    let (path, index) = if self.player.queue_mut().is_empty() {
                         if self.player.index().unwrap() >= self.player.tracks_len() - 1 {
                             self.player.set_index(0);
                         } else {
@@ -208,29 +214,28 @@ impl App {
                         };
 
                         let index = self.player.index().unwrap();
-
                         let path = self.player.tracks()[index].clone();
-                        let file = std::fs::File::open(&path).unwrap();
-                        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
-                        let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
 
-                        self.audio_tx.send(Command::play(source)).unwrap();
-                        self.start_timer = Instant::now();
-
-                        self.progress = Some(0.0);
-                        self.player.set_current(path, duration, index);
+                        (path, index)
                     } else {
                         let next_track = self.player.queue_mut().pop_front().unwrap();
-                        let file = std::fs::File::open(&next_track.path).unwrap();
-                        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
-                        let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
+                        (next_track.path, next_track.index)
+                    };
 
-                        self.audio_tx.send(Command::play(source)).unwrap();
+                    let file = std::fs::File::open(&path).unwrap();
+                    let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+                    let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
 
-                        self.progress = Some(0.0);
-                        self.player
-                            .set_current(next_track.path, duration, next_track.index);
-                    }
+                    self.audio_tx.send(Command::play(source)).unwrap();
+                    self.start_timer = Instant::now();
+
+                    let p = Path::new(&path);
+                    let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or(&path);
+
+                    self.control_bar.name = name.to_string();
+
+                    self.control_bar.progress = Some(0.0);
+                    self.player.set_current(path, duration, index);
                 }
                 Message::CurrentVolume(vol) => {
                     self.volume = vol;
@@ -239,7 +244,7 @@ impl App {
                     let dur = self.player.get_current_duration();
                     match dur {
                         Some(dur) => {
-                            self.progress =
+                            self.control_bar.progress =
                                 Some((pos.as_millis() as f32) / (dur.as_millis() as f32));
                         }
                         None => {}
@@ -268,7 +273,7 @@ impl Widget for &mut App {
             [
                 Constraint::Length(2),
                 Constraint::Fill(1),
-                Constraint::Length(2),
+                Constraint::Length(3),
             ],
         )
         .areas(area);
@@ -278,47 +283,9 @@ impl Widget for &mut App {
 
         let header = Text::from_iter(vec![current, vol]);
 
-        let [buttons_area, progress_area] = Layout::new(
-            Direction::Vertical,
-            [Constraint::Length(1), Constraint::Length(1)],
-        )
-        .areas(control_area);
-
-        let [_, progress_area, _] = Layout::new(
-            Direction::Horizontal,
-            [
-                Constraint::Fill(1),
-                Constraint::Fill(8),
-                Constraint::Fill(1),
-            ],
-        )
-        .areas(progress_area);
-
-        {
-            let width = progress_area.width;
-            let progress = match self.progress {
-                Some(progress) => progress * 100.0,
-                None => 0.0,
-            };
-
-            let one_cell_rat = 100.0 / width as f32;
-
-            let till = (progress / one_cell_rat).round() as u16;
-            for x in 0..width {
-                let cell = buf
-                    .cell_mut((progress_area.x + x, progress_area.y))
-                    .unwrap();
-                if x < till {
-                    cell.set_char('#');
-                } else {
-                    cell.set_char('_');
-                }
-            }
-        };
-
-        Line::raw(format!("{:?}", self.progress)).render(buttons_area, buf);
-
         header.render(header_area, buf);
+
+        self.control_bar.render(control_area, buf);
 
         self.player.render(main_area, buf);
     }

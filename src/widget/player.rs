@@ -3,7 +3,7 @@ use std::{collections::VecDeque, time::Duration};
 use ratatui::{
     style::{Color, Stylize},
     text::{Line, Text},
-    widgets::{List, ListItem, Widget},
+    widgets::Widget,
 };
 
 use super::Cursor;
@@ -118,40 +118,27 @@ impl Widget for &mut Player {
 
         let current = self.current.as_ref();
         let list = match current {
-            Some(current) => Text::from(
+            Some(current) => Text::from_iter(self.tracks.iter().enumerate().map(|(i, t)| {
+                let name = t.split("/").last().unwrap();
+
+                let line = if current.path.contains(name) && current.index == i {
+                    let color = if self.cursor() == current.index as u16 {
+                        Color::Yellow
+                    } else {
+                        Color::Blue
+                    };
+
+                    Line::raw(name).fg(color)
+                } else {
+                    Line::raw(name)
+                };
+
+                line
+            })),
+            None => Text::from_iter(
                 self.tracks
                     .iter()
-                    .enumerate()
-                    .map(|(i, t)| {
-                        let name = t.split("/").last().unwrap();
-
-                        let line = if current.path.contains(name) && current.index == i {
-                            eprintln!("Cursor: {}, Index: {}", self.cursor(), current.index);
-                            let color = if self.cursor() == current.index as u16 {
-                                Color::Yellow
-                            } else {
-                                Color::Blue
-                            };
-
-                            Line::raw(name).fg(color)
-                        } else {
-                            Line::raw(name)
-                        };
-
-                        line
-                    })
-                    .collect::<Vec<Line>>(),
-            ),
-            None => Text::from(
-                self.tracks
-                    .iter()
-                    .map(|t| {
-                        let name = t.split("/").last().unwrap();
-                        let line = Line::raw(name);
-
-                        line
-                    })
-                    .collect::<Vec<Line>>(),
+                    .map(|t| Line::raw(t.split("/").last().unwrap())),
             ),
         };
 
