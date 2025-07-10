@@ -1,16 +1,18 @@
-use crate::{app::App, widget::Player};
+use crate::{app::App, io::get_config, widget::Player};
 
 mod app;
+mod config;
 mod input;
+mod io;
 mod music;
 mod widget;
 
 fn main() {
     let terminal = ratatui::init();
 
-    // TODO: Parse config for dir in here
-    // else use $HOME/music dir
-    let player = Player::new("/home/lf/music");
+    let config = get_config();
+
+    let player = Player::new(config.audio_dir);
 
     let app = App::with_player(player);
     app.start(terminal);

@@ -100,9 +100,7 @@ where
 
         if let None = next {
             eprintln!("TrackEnded callback");
-            self.main_handle
-                .send(Message::TrackEnded)
-                .unwrap();
+            self.main_handle.send(Message::TrackEnded).unwrap();
         }
 
         next
@@ -145,7 +143,6 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
 
             let command = match rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(command) => {
-                    eprintln!("Ok: {:?}", command);
                     command
                 }
                 Err(err) => {

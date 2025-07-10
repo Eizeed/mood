@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, path::Path, time::Duration};
 
 use ratatui::{
     style::{Color, Stylize},
@@ -18,7 +18,7 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(path: &str) -> Self {
+    pub fn new<T: AsRef<Path>>(path: T) -> Self {
         let tracks = std::fs::read_dir(path).unwrap();
 
         // Do better
