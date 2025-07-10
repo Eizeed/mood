@@ -1,5 +1,5 @@
 use std::{
-    io::BufReader,
+    io::{BufReader, stdout},
     ops::ControlFlow,
     path::Path,
     time::{Duration, Instant},
@@ -9,7 +9,13 @@ use crossbeam_channel::{Receiver, RecvError, Sender};
 
 use ratatui::{
     Terminal,
-    crossterm::event::{Event, KeyCode, KeyModifiers},
+    crossterm::{
+        ExecutableCommand,
+        event::{
+            DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+            MouseEventKind,
+        },
+    },
     layout::{Constraint, Direction, Layout},
     prelude::Backend,
     text::{Line, Text},
@@ -68,6 +74,8 @@ impl App {
     }
 
     pub fn start<B: Backend>(mut self, mut terminal: Terminal<B>) {
+        stdout().execute(EnableMouseCapture).unwrap();
+
         loop {
             terminal
                 .draw(|f| {
@@ -94,6 +102,7 @@ impl App {
                 break;
             }
         }
+        stdout().execute(DisableMouseCapture).unwrap();
     }
 
     pub fn handle_event(&mut self, ev: Event) {
@@ -195,7 +204,56 @@ impl App {
                     _ => {}
                 }
             }
-            Event::Mouse(_m) => {}
+            Event::Mouse(m) => {
+                let x = m.column;
+                let y = m.row;
+
+                match m.kind {
+                    MouseEventKind::Down(button) => match button {
+                        MouseButton::Left => {
+                            if y == self.control_bar.control_bar_y() {
+                                if self.control_bar.shuffle().contains(&x) {
+                                    self.control_bar.random = !self.control_bar.random;
+                                }
+
+                                if self.control_bar.seek_backward().contains(&x) {
+                                    if self.start_timer.elapsed() < Duration::from_millis(100) {
+                                        return;
+                                    }
+                                    self.audio_tx
+                                        .send(Command::SeekBackward(Duration::from_secs(5)))
+                                        .unwrap();
+                                }
+
+                                if self.control_bar.pause().contains(&x) {
+                                    if self.player.is_paused() {
+                                        self.audio_tx.send(Command::resume()).unwrap();
+                                        self.player.set_is_paused(false);
+                                    } else {
+                                        self.audio_tx.send(Command::pause()).unwrap();
+                                        self.player.set_is_paused(true);
+                                    }
+                                }
+
+                                if self.control_bar.seek_forward().contains(&x) {
+                                    if self.start_timer.elapsed() < Duration::from_millis(100) {
+                                        return;
+                                    }
+                                    self.audio_tx
+                                        .send(Command::SeekForward(Duration::from_secs(5)))
+                                        .unwrap();
+                                }
+
+                                if self.control_bar.repeat().contains(&x) {
+                                    self.control_bar.repeat = !self.control_bar.repeat;
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
