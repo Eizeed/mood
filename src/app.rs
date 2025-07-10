@@ -225,6 +225,14 @@ impl App {
     fn handle_message(&mut self, message: Message) {
         match message {
             Message::TrackEnded => {
+                if self.control_bar.repeat {
+                    let path = self.player.get_current_path().unwrap().to_string();
+                    let index = self.player.get_current_index().unwrap();
+                    self.set_audio(path, index);
+
+                    return;
+                }
+
                 let (path, index) = if self.player.queue_mut().is_empty() {
                     if self.player.index().unwrap() >= self.player.tracks_len() - 1 {
                         self.player.set_index(0);
