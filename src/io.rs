@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use crate::config::Config;
 
 pub fn get_config() -> Config {
@@ -31,4 +33,31 @@ pub fn get_config() -> Config {
     Config {
         audio_dir: home_dir,
     }
+}
+
+pub fn get_files<T: AsRef<Path>>(path: T, extension: &str) -> Vec<PathBuf> {
+    let root = path.as_ref().to_path_buf();
+
+    let mut files = vec![];
+    let mut stack = vec![root];
+
+    while let Some(dir) = stack.pop() {
+        for entry in dir.read_dir().unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                match path.extension() {
+                    Some(ext) => {
+                        if ext == extension {
+                            files.push(path);
+                        }
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+
+    files
 }

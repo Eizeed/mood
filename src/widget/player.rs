@@ -6,6 +6,8 @@ use ratatui::{
     widgets::Widget,
 };
 
+use crate::io::get_files;
+
 use super::Cursor;
 
 pub struct Player {
@@ -19,15 +21,12 @@ pub struct Player {
 
 impl Player {
     pub fn new<T: AsRef<Path>>(path: T) -> Self {
-        let tracks = std::fs::read_dir(path).unwrap();
+        let tracks = get_files(path, "mp3");
+        // tracks.sort();
 
-        // Do better
         let names: Vec<String> = tracks
-            .map(|e| {
-                let entry = e.unwrap();
-                entry.path().to_str().unwrap().to_string()
-            })
-            .filter(|n| n.ends_with(".mp3"))
+            .into_iter()
+            .map(|pb| pb.to_str().unwrap().to_string())
             .collect();
 
         Player {
