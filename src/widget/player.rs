@@ -1,6 +1,10 @@
 use std::{collections::VecDeque, time::Duration};
 
-use ratatui::widgets::{List, ListItem, Widget};
+use ratatui::{
+    style::{Color, Stylize},
+    text::{Line, Text},
+    widgets::{List, ListItem, Widget},
+};
 
 use super::Cursor;
 
@@ -110,11 +114,37 @@ impl Widget for &mut Player {
     where
         Self: Sized,
     {
-        let list = List::new(
-            self.tracks
-                .iter()
-                .map(|t| ListItem::new(t.split("/").last().unwrap())),
-        );
+        let current = self.current.as_ref();
+        let list = match current {
+            Some(current) => Text::from(
+                self.tracks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| {
+                        let name = t.split("/").last().unwrap();
+
+                        let line = if current.path.contains(name) && current.index == i {
+                            Line::raw(name).fg(Color::Blue)
+                        } else {
+                            Line::raw(name)
+                        };
+
+                        line
+                    })
+                    .collect::<Vec<Line>>(),
+            ),
+            None => Text::from(
+                self.tracks
+                    .iter()
+                    .map(|t| {
+                        let name = t.split("/").last().unwrap();
+                        let line = Line::raw(name);
+
+                        line
+                    })
+                    .collect::<Vec<Line>>(),
+            ),
+        };
 
         list.render(area, buf);
 
