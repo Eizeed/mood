@@ -113,7 +113,7 @@ impl App {
 
                 match keycode {
                     KeyCode::Esc => self.should_exit = true,
-                    KeyCode::Char('k') => {
+                    KeyCode::Char('k') | KeyCode::Up => {
                         match modifiers {
                             KeyModifiers::CONTROL => {
                                 let vol = 0.05;
@@ -126,7 +126,7 @@ impl App {
                             _ => (),
                         };
                     }
-                    KeyCode::Char('j') => {
+                    KeyCode::Char('j') | KeyCode::Down => {
                         match modifiers {
                             KeyModifiers::CONTROL => {
                                 self.audio_tx.send(Command::VolumeDown(0.05)).unwrap();
@@ -168,15 +168,7 @@ impl App {
 
                         self.set_audio(path, index);
                     }
-                    KeyCode::Char(' ') => {
-                        if self.player.is_paused() {
-                            self.audio_tx.send(Command::resume()).unwrap();
-                            self.player.set_is_paused(false);
-                        } else {
-                            self.audio_tx.send(Command::pause()).unwrap();
-                            self.player.set_is_paused(true);
-                        }
-                    }
+                    KeyCode::Char(' ') => self.toggle_pause(),
                     _ => {}
                 }
             }
@@ -197,13 +189,7 @@ impl App {
                                 }
 
                                 if self.control_bar.pause().contains(&x) {
-                                    if self.player.is_paused() {
-                                        self.audio_tx.send(Command::resume()).unwrap();
-                                        self.player.set_is_paused(false);
-                                    } else {
-                                        self.audio_tx.send(Command::pause()).unwrap();
-                                        self.player.set_is_paused(true);
-                                    }
+                                    self.toggle_pause();
                                 }
 
                                 if self.control_bar.seek_forward().contains(&x) {
@@ -306,6 +292,16 @@ impl App {
             return;
         }
         self.audio_tx.send(Command::SeekForward(duration)).unwrap();
+    }
+
+    pub fn toggle_pause(&mut self) {
+        if self.player.is_paused() {
+            self.audio_tx.send(Command::resume()).unwrap();
+            self.player.set_is_paused(false);
+        } else {
+            self.audio_tx.send(Command::pause()).unwrap();
+            self.player.set_is_paused(true);
+        }
     }
 }
 
