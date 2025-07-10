@@ -114,6 +114,8 @@ impl Widget for &mut Player {
     where
         Self: Sized,
     {
+        self.cursor.render(area, buf);
+
         let current = self.current.as_ref();
         let list = match current {
             Some(current) => Text::from(
@@ -124,7 +126,14 @@ impl Widget for &mut Player {
                         let name = t.split("/").last().unwrap();
 
                         let line = if current.path.contains(name) && current.index == i {
-                            Line::raw(name).fg(Color::Blue)
+                            eprintln!("Cursor: {}, Index: {}", self.cursor(), current.index);
+                            let color = if self.cursor() == current.index as u16 {
+                                Color::Yellow
+                            } else {
+                                Color::Blue
+                            };
+
+                            Line::raw(name).fg(color)
                         } else {
                             Line::raw(name)
                         };
@@ -147,8 +156,6 @@ impl Widget for &mut Player {
         };
 
         list.render(area, buf);
-
-        self.cursor.render(area, buf);
     }
 }
 
