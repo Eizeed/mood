@@ -1,6 +1,8 @@
 use std::{collections::VecDeque, path::Path, time::Duration};
 
 use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
     style::{Color, Stylize},
     text::{Line, Text},
     widgets::Widget,
@@ -10,20 +12,41 @@ use crate::io::get_files;
 
 use super::Cursor;
 
+
+// TODO: Brainstorm this bitch
 pub struct Player {
+    // Should be all_tracks
+    // And need to create playlist
+    // for current tracks, idk
     tracks: Vec<String>,
-    index: Option<usize>,
     current: Option<CurrentTrack>,
+
+    // That's the main vector.
+    // Tracks would be poped from here
+    // if there is no tracks in manual queue
+    // Poping because need to apply shuffle
+    // and for now i don't know how to implement
+    // it without poping played tracks. Sadge
     auto_queue: VecDeque<Track>,
+
+    // Vector for user added tracks.
+    // They have priority.
+    // Repeat doesn't apply to them.
+    // After being poped, track won't be
+    // added to histry vector
     manual_queue: VecDeque<Track>,
-    cursor: Cursor,
+    // history: Vec<Track>,
     is_paused: bool,
+
+    cursor: Cursor,
+
+    area: Rect,
+    pub y_offset: u16,
 }
 
 impl Player {
     pub fn new<T: AsRef<Path>>(path: T) -> Self {
         let tracks = get_files(path, "mp3");
-        // tracks.sort();
 
         let names: Vec<String> = tracks
             .into_iter()
@@ -33,11 +56,33 @@ impl Player {
         Player {
             tracks: names,
             current: None,
-            index: None,
             auto_queue: VecDeque::new(),
             manual_queue: VecDeque::new(),
             cursor: Cursor::new(),
             is_paused: false,
+            area: Rect::ZERO,
+            y_offset: 0,
+        }
+    }
+
+    pub fn cursor_up(&mut self, count: usize) {
+        let count = count as u16;
+        if self.cursor.y < count {
+            let rest = count - self.cursor.y;
+            self.y_offset = self.y_offset.saturating_sub(rest);
+        } else {
+            self.cursor.y -= count;
+        }
+    }
+
+    pub fn cursor_down(&mut self, count: usize) {
+        let total = self.tracks_len() as u16;
+        if self.cursor.y + (count as u16) < self.area.height
+            && self.cursor.y + self.y_offset < total
+        {
+            self.cursor.y += count as u16;
+        } else if self.y_offset + self.area.height - 1 < total - 1 {
+            self.y_offset += 1;
         }
     }
 
@@ -61,8 +106,9 @@ impl Player {
         self.tracks.len()
     }
 
-    pub fn track_under_cursor(&self) -> String {
-        self.tracks[self.cursor.y as usize].clone()
+    pub fn track_under_cursor(&self) -> (String, usize) {
+        let idx = (self.cursor.y + self.y_offset) as usize;
+        (self.tracks[idx].clone(), idx)
     }
 
     pub fn get_current_path(&self) -> Option<&str> {
@@ -108,45 +154,47 @@ impl Player {
     pub fn set_is_paused(&mut self, is_paused: bool) {
         self.is_paused = is_paused;
     }
-
-    pub fn index(&self) -> Option<usize> {
-        self.index
-    }
-
-    pub fn set_index(&mut self, index: usize) {
-        self.index = Some(index);
-    }
 }
 
 impl Widget for &mut Player {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    fn render(self, area: Rect, buf: &mut Buffer)
     where
         Self: Sized,
     {
+        self.area = area;
         self.cursor.render(area, buf);
 
         let current = self.current.as_ref();
         let list = match current {
-            Some(current) => Text::from_iter(self.tracks.iter().enumerate().map(|(i, t)| {
-                let name = t.split("/").last().unwrap();
+            Some(current) => Text::from_iter(
+                self.tracks
+                    .iter()
+                    .skip(self.y_offset as usize)
+                    .enumerate()
+                    .map(|(i, t)| {
+                        let name = t.split("/").last().unwrap();
 
-                let line = if current.path.contains(name) && current.index == i {
-                    let color = if self.cursor() == current.index as u16 {
-                        Color::Yellow
-                    } else {
-                        Color::Blue
-                    };
+                        let line = if current.path.contains(name)
+                            && current.index - self.y_offset as usize == i
+                        {
+                            let color = if self.cursor() == current.index as u16 {
+                                Color::Yellow
+                            } else {
+                                Color::Blue
+                            };
 
-                    Line::raw(name).fg(color)
-                } else {
-                    Line::raw(name)
-                };
+                            Line::raw(name).fg(color)
+                        } else {
+                            Line::raw(name)
+                        };
 
-                line
-            })),
+                        line
+                    }),
+            ),
             None => Text::from_iter(
                 self.tracks
                     .iter()
+                    .skip(self.y_offset as usize)
                     .map(|t| Line::raw(t.split("/").last().unwrap())),
             ),
         };

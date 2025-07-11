@@ -3,16 +3,22 @@ use std::ops::Range;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     text::Line,
-    widgets::Widget,
+    widgets::{Block, Borders, Widget},
 };
 
 #[derive(Debug)]
 pub struct ControlBar {
     pub name: String,
-    // duration
-    // pos
     pub repeat: Repeat,
     pub random: bool,
+
+    // TODO: in future when i will bring more styles
+    // Create a tracker for duration something like
+    // 0:52---3:22
+    // Or somthing simmilar
+
+    // duration
+    // pos
     pub progress: Option<f32>,
 
     control_bar_y: Option<u16>,
@@ -93,17 +99,20 @@ impl Widget for &mut ControlBar {
     where
         Self: Sized,
     {
-        debug_assert!(area.height == 3);
+        debug_assert!(area.height == 4);
 
-        let [name_area, progress_area, button_area] = Layout::new(
+        let [border, name_area, progress_area, button_area] = Layout::new(
             Direction::Vertical,
             [
+                Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Length(1),
             ],
         )
         .areas(area);
+
+        Block::new().borders(Borders::TOP).render(border, buf);
 
         {
             Line::raw(&self.name).centered().render(name_area, buf);
@@ -160,6 +169,7 @@ impl Widget for &mut ControlBar {
 
             let start = button_area.x;
 
+            // bruh...
             self.control_bar_y = Some(button_area.y);
             self.shuffle_pos = Some(start..start + 3);
             self.seek_backward_pos = Some(start + 4..start + 7);

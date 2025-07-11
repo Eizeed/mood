@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     io::{BufReader, stdout},
     path::Path,
     time::{Duration, Instant},
@@ -30,10 +29,11 @@ use crate::{
 };
 
 pub struct App {
-    player: Player,
-    control_bar: ControlBar,
     should_exit: bool,
     volume: f32,
+
+    player: Player,
+    control_bar: ControlBar,
 
     start_timer: Instant,
 
@@ -124,8 +124,7 @@ impl App {
                                 self.audio_tx.send(Command::VolumeUp(vol)).unwrap();
                             }
                             KeyModifiers::NONE => {
-                                self.player
-                                    .set_cursor(self.player.cursor().saturating_sub(1));
+                                self.player.cursor_up(1);
                             }
                             _ => (),
                         };
@@ -136,10 +135,7 @@ impl App {
                                 self.audio_tx.send(Command::VolumeDown(0.05)).unwrap();
                             }
                             KeyModifiers::NONE => {
-                                let new_y = self.player.cursor() + 1;
-                                if self.player.tracks_len() as u16 > new_y {
-                                    self.player.set_cursor(new_y);
-                                }
+                                self.player.cursor_down(1);
                             }
                             _ => (),
                         };
@@ -157,7 +153,7 @@ impl App {
                         _ => {}
                     },
                     KeyCode::Char('q') => {
-                        let track = self.player.track_under_cursor().clone();
+                        let (track, _) = self.player.track_under_cursor().clone();
                         let index = self.player.cursor();
                         self.player.manual_queue_mut().push_back(Track {
                             path: track,
@@ -165,11 +161,9 @@ impl App {
                         });
                     }
                     KeyCode::Enter => {
-                        let index = self.player.cursor() as usize;
+                        let (_, idx) = self.player.track_under_cursor();
 
-                        self.player.set_index(index);
-
-                        let track = self.set_auto_queue(index);
+                        let track = self.set_auto_queue(idx);
                         self.set_audio(track.path, track.index);
                     }
                     KeyCode::Char(' ') => self.toggle_pause(),
@@ -355,7 +349,7 @@ impl Widget for &mut App {
             [
                 Constraint::Length(2),
                 Constraint::Fill(1),
-                Constraint::Length(3),
+                Constraint::Length(4),
             ],
         )
         .areas(area);
