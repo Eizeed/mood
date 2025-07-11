@@ -1,7 +1,7 @@
 use std::{fmt::Debug, fs::File, io::BufReader, time::Duration};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
-use rodio::{Decoder, OutputStream, Sink, Source};
+use rodio::{Decoder, OutputStream, Sink, Source, source::SeekError};
 
 pub enum Command {
     Play(Decoder<BufReader<File>>),
@@ -99,7 +99,6 @@ where
         let next = self.inner.next();
 
         if let None = next {
-            eprintln!("TrackEnded callback");
             self.main_handle.send(Message::TrackEnded).unwrap();
         }
 
@@ -121,10 +120,10 @@ where
     fn sample_rate(&self) -> u32 {
         self.inner.sample_rate()
     }
-    fn total_duration(&self) -> Option<std::time::Duration> {
+    fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
     }
-    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
         self.inner.try_seek(pos)
     }
 }
@@ -142,9 +141,7 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
             }
 
             let command = match rx.recv_timeout(Duration::from_millis(500)) {
-                Ok(command) => {
-                    command
-                }
+                Ok(command) => command,
                 Err(err) => {
                     // eprintln!("Error: {}", err);
                     match err {
@@ -183,11 +180,6 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                     // Symphonia and cpal
                     std::thread::sleep(Duration::from_millis(50));
 
-                    // Maybe speen a loop a bit
-                    // while sink.get_pos() > Duration::from_millis(500) {
-                    //     std::thread::sleep(Duration::from_millis(10));
-                    // }
-
                     tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
                 }
                 Command::Pause => {
@@ -221,6 +213,7 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
                 }
                 // TODO: Sometimes when it fires it will send track ended
                 // but main thread won't do anything. UI freezes and inputs are not readen
+                // UPD: I still don't know but i guess it's fixed
                 Command::SeekForward(duration) => {
                     eprintln!("SeekFroward command");
                     let pos = sink.get_pos();

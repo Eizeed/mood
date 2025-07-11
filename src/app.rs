@@ -1,11 +1,11 @@
 use std::{
+    collections::VecDeque,
     io::{BufReader, stdout},
-    ops::ControlFlow,
     path::Path,
     time::{Duration, Instant},
 };
 
-use crossbeam_channel::{Receiver, RecvError, Sender};
+use crossbeam_channel::{Receiver, Sender};
 
 use ratatui::{
     Terminal,
@@ -26,7 +26,7 @@ use rodio::Source;
 use crate::{
     input::spawn_input,
     music::{Command, Message, spawn_music},
-    widget::{ControlBar, Player, player::Track},
+    widget::{ControlBar, Player, control_bar::Repeat, player::Track},
 };
 
 pub struct App {
@@ -45,6 +45,7 @@ pub struct App {
 
 impl App {
     pub fn with_player(player: Player) -> Self {
+        // Idk how much to allocate
         let (main_audio_tx, main_audio_rx) = crossbeam_channel::bounded::<Command>(64);
         let (audio_main_tx, audio_main_rx) = crossbeam_channel::bounded::<Message>(64);
 
@@ -54,7 +55,7 @@ impl App {
         spawn_input(input_main_tx);
 
         let Message::CurrentVolume(volume) = audio_main_rx.recv().unwrap() else {
-            unreachable!()
+            unreachable!("How tf you here (Recieved not Message::CurrentVolume)");
         };
 
         App {
@@ -69,7 +70,7 @@ impl App {
         }
     }
 
-    pub fn should_exit(&self) -> bool {
+    fn should_exit(&self) -> bool {
         self.should_exit
     }
 
@@ -78,18 +79,21 @@ impl App {
 
         loop {
             terminal
-                .draw(|f| {
-                    self.render(f.area(), f.buffer_mut());
-                })
+                .draw(|f| self.render(f.area(), f.buffer_mut()))
                 .expect("failed to draw frame");
 
             loop {
                 crossbeam_channel::select_biased! {
                     recv(self.audio_rx) -> msg => {
-                        match self.handle_audio_rx(msg) {
-                            ControlFlow::Break(()) => break,
-                            _ => {}
+                        let msg = msg.unwrap();
+
+                        self.handle_audio_rx(msg);
+
+                        for msg in self.audio_rx.clone().try_iter() {
+                            self.handle_audio_rx(msg)
                         }
+
+                        break;
                     }
                     recv(self.input_rx) -> event => {
                         self.handle_event(event.unwrap());
@@ -155,18 +159,18 @@ impl App {
                     KeyCode::Char('q') => {
                         let track = self.player.track_under_cursor().clone();
                         let index = self.player.cursor();
-                        self.player.queue_mut().push_back(Track {
+                        self.player.manual_queue_mut().push_back(Track {
                             path: track,
                             index: index as usize,
                         });
                     }
                     KeyCode::Enter => {
-                        let path = self.player.track_under_cursor();
                         let index = self.player.cursor() as usize;
 
                         self.player.set_index(index);
 
-                        self.set_audio(path, index);
+                        let track = self.set_auto_queue(index);
+                        self.set_audio(track.path, track.index);
                     }
                     KeyCode::Char(' ') => self.toggle_pause(),
                     _ => {}
@@ -180,24 +184,24 @@ impl App {
                     MouseEventKind::Down(button) => match button {
                         MouseButton::Left => {
                             if y == self.control_bar.control_bar_y() {
-                                if self.control_bar.shuffle().contains(&x) {
+                                if self.control_bar.shuffle_pos().contains(&x) {
                                     self.control_bar.random = !self.control_bar.random;
                                 }
 
-                                if self.control_bar.seek_backward().contains(&x) {
+                                if self.control_bar.seek_backward_pos().contains(&x) {
                                     self.seek_backward(Duration::from_secs(5));
                                 }
 
-                                if self.control_bar.pause().contains(&x) {
+                                if self.control_bar.pause_pos().contains(&x) {
                                     self.toggle_pause();
                                 }
 
-                                if self.control_bar.seek_forward().contains(&x) {
+                                if self.control_bar.seek_forward_pos().contains(&x) {
                                     self.seek_forward(Duration::from_secs(5));
                                 }
 
-                                if self.control_bar.repeat().contains(&x) {
-                                    self.control_bar.repeat = !self.control_bar.repeat;
+                                if self.control_bar.repeat_pos().contains(&x) {
+                                    self.control_bar.toggle_repeat();
                                 }
                             }
                         }
@@ -210,42 +214,53 @@ impl App {
         }
     }
 
-    fn handle_audio_rx(&mut self, msg: Result<Message, RecvError>) -> ControlFlow<()> {
-        let msg = msg.unwrap();
-
-        self.handle_message(msg);
-
-        for msg in self.audio_rx.clone().try_iter() {
-            self.handle_message(msg)
-        }
-
-        ControlFlow::Break(())
-    }
-
-    fn handle_message(&mut self, message: Message) {
+    fn handle_audio_rx(&mut self, message: Message) {
         match message {
             Message::TrackEnded => {
-                if self.control_bar.repeat {
-                    let path = self.player.get_current_path().unwrap().to_string();
-                    let index = self.player.get_current_index().unwrap();
-                    self.set_audio(path, index);
+                if let Repeat::RepeatOne = self.control_bar.repeat {}
 
-                    return;
+                if let Repeat::RepeatQueue = self.control_bar.repeat {
+                    match self.player.auto_queue_mut().pop_front() {
+                        Some(track) => {
+                            self.set_audio(track.path, track.index);
+
+                            return;
+                        }
+                        None => {}
+                    }
                 }
 
-                let (path, index) = if self.player.queue_mut().is_empty() {
-                    if self.player.index().unwrap() >= self.player.tracks_len() - 1 {
-                        self.player.set_index(0);
-                    } else {
-                        self.player.set_index(self.player.index().unwrap() + 1);
-                    };
+                let (path, index) = if self.player.manual_queue_mut().is_empty() {
+                    match self.control_bar.repeat {
+                        Repeat::None => {
+                            let track = match self.player.auto_queue_mut().pop_front() {
+                                Some(track) => track,
+                                None => {
+                                    self.player.unset_current();
+                                    self.control_bar.progress = None;
+                                    return;
+                                }
+                            };
 
-                    let index = self.player.index().unwrap();
-                    let path = self.player.tracks()[index].clone();
+                            (track.path, track.index)
+                        }
+                        Repeat::RepeatQueue => {
+                            let track = match self.player.auto_queue_mut().pop_front() {
+                                Some(track) => track,
+                                None => self.set_auto_queue(0),
+                            };
 
-                    (path, index)
+                            (track.path, track.index)
+                        }
+                        Repeat::RepeatOne => {
+                            let path = self.player.get_current_path().unwrap().to_string();
+                            let index = self.player.get_current_index().unwrap();
+                            (path, index)
+                        }
+                    }
                 } else {
-                    let next_track = self.player.queue_mut().pop_front().unwrap();
+                    let next_track = self.player.manual_queue_mut().pop_front().unwrap();
+
                     (next_track.path, next_track.index)
                 };
 
@@ -286,6 +301,23 @@ impl App {
         self.control_bar.progress = Some(0.0);
         self.player
             .set_current(path.as_ref().to_str().unwrap().to_string(), duration, index);
+    }
+
+    pub fn set_auto_queue(&mut self, index: usize) -> Track {
+        let tracks: Vec<Track> = self
+            .player
+            .tracks()
+            .iter()
+            .enumerate()
+            .filter(|(idx, _str)| *idx >= index)
+            .map(|(idx, str)| Track {
+                path: str.clone(),
+                index: idx,
+            })
+            .collect();
+
+        self.player.set_auto_queue(tracks.into_iter());
+        self.player.auto_queue_mut().pop_front().unwrap()
     }
 
     pub fn seek_backward(&mut self, duration: Duration) {
@@ -335,8 +367,7 @@ impl Widget for &mut App {
 
         header.render(header_area, buf);
 
-        self.control_bar.render(control_area, buf);
-
         self.player.render(main_area, buf);
+        self.control_bar.render(control_area, buf);
     }
 }

@@ -11,7 +11,7 @@ pub struct ControlBar {
     pub name: String,
     // duration
     // pos
-    pub repeat: bool,
+    pub repeat: Repeat,
     pub random: bool,
     pub progress: Option<f32>,
 
@@ -24,11 +24,18 @@ pub struct ControlBar {
     repeat_pos: Option<Range<u16>>,
 }
 
+#[derive(Debug)]
+pub enum Repeat {
+    None,
+    RepeatQueue,
+    RepeatOne,
+}
+
 impl ControlBar {
     pub fn new() -> Self {
         ControlBar {
             name: "".to_string(),
-            repeat: false,
+            repeat: Repeat::None,
             random: false,
             progress: None,
 
@@ -45,20 +52,39 @@ impl ControlBar {
     pub fn control_bar_y(&self) -> u16 {
         self.control_bar_y.unwrap()
     }
-    pub fn shuffle(&self) -> &Range<u16> {
+
+    pub fn shuffle_pos(&self) -> &Range<u16> {
         self.shuffle_pos.as_ref().unwrap()
     }
-    pub fn seek_backward(&self) -> &Range<u16> {
+
+    pub fn seek_backward_pos(&self) -> &Range<u16> {
         self.seek_backward_pos.as_ref().unwrap()
     }
-    pub fn pause(&self) -> &Range<u16> {
+
+    pub fn pause_pos(&self) -> &Range<u16> {
         self.pause_pos.as_ref().unwrap()
     }
-    pub fn seek_forward(&self) -> &Range<u16> {
+
+    pub fn seek_forward_pos(&self) -> &Range<u16> {
         self.seek_forward_pos.as_ref().unwrap()
     }
-    pub fn repeat(&self) -> &Range<u16> {
+
+    pub fn repeat_pos(&self) -> &Range<u16> {
         self.repeat_pos.as_ref().unwrap()
+    }
+
+    pub fn toggle_repeat(&mut self) {
+        match self.repeat {
+            Repeat::None => {
+                self.repeat = Repeat::RepeatQueue;
+            }
+            Repeat::RepeatQueue => {
+                self.repeat = Repeat::RepeatOne;
+            }
+            Repeat::RepeatOne => {
+                self.repeat = Repeat::None;
+            }
+        }
     }
 }
 
@@ -126,7 +152,12 @@ impl Widget for &mut ControlBar {
             )
             .areas(button_area);
 
-            let control = "[s] [<] [\u{23F8}] [>] [r]";
+            // This section looks really really REALLY bad. But it works!
+            let control = match self.repeat {
+                Repeat::None | Repeat::RepeatQueue => "[s] [<] [\u{23F8}] [>] [r]",
+                Repeat::RepeatOne => "[s] [<] [\u{23F8}] [>] [R]",
+            };
+
             let start = button_area.x;
 
             self.control_bar_y = Some(button_area.y);
@@ -150,17 +181,20 @@ impl Widget for &mut ControlBar {
                 }
             }
 
-            if self.repeat {
-                for i in self.repeat().clone() {
-                    buf.cell_mut((i, button_area.y))
-                        .unwrap()
-                        .set_fg(ratatui::style::Color::Green);
+            match self.repeat {
+                Repeat::None => {
+                    for i in self.repeat_pos().clone() {
+                        buf.cell_mut((i, button_area.y))
+                            .unwrap()
+                            .set_fg(ratatui::style::Color::Reset);
+                    }
                 }
-            } else {
-                for i in self.repeat().clone() {
-                    buf.cell_mut((i, button_area.y))
-                        .unwrap()
-                        .set_fg(ratatui::style::Color::Reset);
+                Repeat::RepeatQueue | Repeat::RepeatOne => {
+                    for i in self.repeat_pos().clone() {
+                        buf.cell_mut((i, button_area.y))
+                            .unwrap()
+                            .set_fg(ratatui::style::Color::Green);
+                    }
                 }
             }
 

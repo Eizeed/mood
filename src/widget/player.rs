@@ -14,7 +14,8 @@ pub struct Player {
     tracks: Vec<String>,
     index: Option<usize>,
     current: Option<CurrentTrack>,
-    queue: VecDeque<Track>,
+    auto_queue: VecDeque<Track>,
+    manual_queue: VecDeque<Track>,
     cursor: Cursor,
     is_paused: bool,
 }
@@ -33,14 +34,23 @@ impl Player {
             tracks: names,
             current: None,
             index: None,
-            queue: VecDeque::new(),
+            auto_queue: VecDeque::new(),
+            manual_queue: VecDeque::new(),
             cursor: Cursor::new(),
             is_paused: false,
         }
     }
 
-    pub fn queue_mut(&mut self) -> &mut VecDeque<Track> {
-        &mut self.queue
+    pub fn manual_queue_mut(&mut self) -> &mut VecDeque<Track> {
+        &mut self.manual_queue
+    }
+
+    pub fn auto_queue_mut(&mut self) -> &mut VecDeque<Track> {
+        &mut self.auto_queue
+    }
+
+    pub fn set_auto_queue<T: Iterator<Item = Track>>(&mut self, tracks: T) {
+        self.auto_queue = tracks.into_iter().collect();
     }
 
     pub fn tracks(&self) -> &[String] {

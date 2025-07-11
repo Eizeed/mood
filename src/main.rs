@@ -11,7 +11,6 @@ fn main() {
     let terminal = ratatui::init();
 
     let config = get_config();
-
     let player = Player::new(config.audio_dir);
 
     let app = App::with_player(player);
