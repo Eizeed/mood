@@ -1,217 +1,259 @@
-use std::{collections::VecDeque, path::Path, time::Duration};
+use std::{collections::VecDeque, path::PathBuf};
 
 use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::{Color, Stylize},
-    text::{Line, Text},
-    widgets::Widget,
+    layout::{Constraint, Direction, Layout, Rect},
+    widgets::{StatefulWidget, Widget},
 };
 
-use crate::io::get_files;
+use crate::{
+    app::{Context, Repeat},
+    widget::{
+        ControlBar, Header, Playlist,
+        playlist::{CurrentTrack, Track},
+    },
+};
 
-use super::Cursor;
-
-
-// TODO: Brainstorm this bitch
 pub struct Player {
-    // Should be all_tracks
-    // And need to create playlist
-    // for current tracks, idk
-    tracks: Vec<String>,
-    current: Option<CurrentTrack>,
+    pub header: Header,
+    pub playlist: Playlist,
+    pub control_bar: ControlBar,
 
-    // That's the main vector.
-    // Tracks would be poped from here
-    // if there is no tracks in manual queue
-    // Poping because need to apply shuffle
-    // and for now i don't know how to implement
-    // it without poping played tracks. Sadge
-    auto_queue: VecDeque<Track>,
+    pub from_auto: bool,
 
-    // Vector for user added tracks.
-    // They have priority.
-    // Repeat doesn't apply to them.
-    // After being poped, track won't be
-    // added to histry vector
-    manual_queue: VecDeque<Track>,
-    // history: Vec<Track>,
-    is_paused: bool,
+    pub focused_widget: Focus,
 
-    cursor: Cursor,
+    pub area: Rect,
+}
 
-    area: Rect,
-    pub y_offset: u16,
+pub enum Focus {
+    Playlist,
 }
 
 impl Player {
-    pub fn new<T: AsRef<Path>>(path: T) -> Self {
-        let tracks = get_files(path, "mp3");
-
-        let names: Vec<String> = tracks
-            .into_iter()
-            .map(|pb| pb.to_str().unwrap().to_string())
-            .collect();
+    pub fn new(playlist: Vec<PathBuf>, area: Rect) -> Self {
+        let [_header_area, playlist_area, control_area] = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Length(2),
+                Constraint::Fill(1),
+                Constraint::Length(4),
+            ],
+        )
+        .areas(area);
 
         Player {
-            tracks: names,
-            current: None,
-            auto_queue: VecDeque::new(),
-            manual_queue: VecDeque::new(),
-            cursor: Cursor::new(),
-            is_paused: false,
-            area: Rect::ZERO,
-            y_offset: 0,
+            header: Header {
+                msg: "Hello world".to_string(),
+            },
+            playlist: Playlist::new(playlist, playlist_area),
+            control_bar: ControlBar::new(control_area),
+
+            from_auto: true,
+
+            focused_widget: Focus::Playlist,
+            area,
         }
     }
 
-    pub fn cursor_up(&mut self, count: usize) {
-        let count = count as u16;
-        if self.cursor.y < count {
-            let rest = count - self.cursor.y;
-            self.y_offset = self.y_offset.saturating_sub(rest);
-        } else {
-            self.cursor.y -= count;
-        }
+    // pub fn change_playlist(&mut self, playlist: Vec<PathBuf>) {}
+
+    pub fn push_front_manual_queue(&mut self, track: Track) {
+        self.playlist.manual_queue.push_back(track);
     }
 
-    pub fn cursor_down(&mut self, count: usize) {
-        let total = self.tracks_len() as u16;
-        if self.cursor.y + (count as u16) < self.area.height
-            && self.cursor.y + self.y_offset < total
-        {
-            self.cursor.y += count as u16;
-        } else if self.y_offset + self.area.height - 1 < total - 1 {
-            self.y_offset += 1;
-        }
-    }
+    pub fn set_auto_queue(&mut self, index: usize) {
+        let mut list = self
+            .playlist
+            .list
+            .clone()
+            .into_iter()
+            .enumerate()
+            .map(|(i, path)| Track { index: i, path })
+            .collect::<Vec<Track>>();
 
-    pub fn manual_queue_mut(&mut self) -> &mut VecDeque<Track> {
-        &mut self.manual_queue
-    }
+        let after = list.split_off(index);
 
-    pub fn auto_queue_mut(&mut self) -> &mut VecDeque<Track> {
-        &mut self.auto_queue
-    }
-
-    pub fn set_auto_queue<T: Iterator<Item = Track>>(&mut self, tracks: T) {
-        self.auto_queue = tracks.into_iter().collect();
-    }
-
-    pub fn tracks(&self) -> &[String] {
-        &self.tracks
-    }
-
-    pub fn tracks_len(&self) -> usize {
-        self.tracks.len()
-    }
-
-    pub fn track_under_cursor(&self) -> (String, usize) {
-        let idx = (self.cursor.y + self.y_offset) as usize;
-        (self.tracks[idx].clone(), idx)
-    }
-
-    pub fn get_current_path(&self) -> Option<&str> {
-        self.current.as_ref().map(|s| s.path.as_str())
-    }
-
-    pub fn get_current_duration(&self) -> Option<Duration> {
-        self.current.as_ref().map(|s| s.duration)
-    }
-
-    pub fn get_current_index(&self) -> Option<usize> {
-        self.current.as_ref().map(|c| c.index)
+        self.playlist.history = list;
+        self.playlist.auto_queue = after.into();
     }
 
     pub fn get_current(&self) -> Option<&CurrentTrack> {
-        self.current.as_ref()
+        self.playlist.current_track.as_ref()
     }
 
-    pub fn set_current<T: Into<usize>>(&mut self, str: String, duration: Duration, index: T) {
-        self.current = Some(CurrentTrack {
-            path: str.into(),
-            duration,
-            index: index.into(),
-        })
+    pub fn take_current(&mut self) -> Option<CurrentTrack> {
+        self.playlist.current_track.take()
+    }
+
+    pub fn set_current(&mut self, current: CurrentTrack) {
+        let name = current.path.file_stem().unwrap();
+
+        self.control_bar.name = name.to_string_lossy().to_string();
+        self.playlist.current_track = Some(current);
     }
 
     pub fn unset_current(&mut self) {
-        self.current = None;
+        self.control_bar.name = "".to_string();
+        self.playlist.current_track = None;
     }
 
-    pub fn cursor(&self) -> u16 {
-        self.cursor.y
+    pub fn toggle_repeat() {}
+    pub fn toggle_shuffle() {}
+    pub fn toggle_pause() {}
+
+    pub fn get_under_cursor(&self) -> Track {
+        self.playlist.get_under_cursor()
     }
 
-    pub fn set_cursor(&mut self, y: u16) {
-        self.cursor.y = y;
+    pub fn pop_auto_queue(&mut self) -> Option<Track> {
+        self.playlist.auto_queue.pop_front()
     }
 
-    pub fn is_paused(&self) -> bool {
-        self.is_paused
+    pub fn manual_queue_mut(&mut self) -> &mut VecDeque<Track> {
+        &mut self.playlist.manual_queue
     }
 
-    pub fn set_is_paused(&mut self, is_paused: bool) {
-        self.is_paused = is_paused;
+    pub fn get_next(&mut self, repeat: Repeat) -> Option<Track> {
+        let track = if self.manual_queue_mut().is_empty() {
+            match repeat {
+                Repeat::None => {
+                    let track = match self.pop_auto_queue() {
+                        Some(track) => track,
+                        None => return None,
+                    };
+
+                    let current = self.take_current()?;
+                    self.playlist.history.push(Track {
+                        index: current.index,
+                        path: current.path,
+                    });
+
+                    track
+                }
+                Repeat::Queue | Repeat::One => {
+                    let current = self.take_current()?;
+                    self.playlist.history.push(Track {
+                        index: current.index,
+                        path: current.path,
+                    });
+
+                    let track = match self.pop_auto_queue() {
+                        Some(track) => track,
+                        None => {
+                            self.playlist.auto_queue = self
+                                .playlist
+                                .list
+                                .clone()
+                                .into_iter()
+                                .enumerate()
+                                .map(|(idx, path)| Track { index: idx, path })
+                                .collect();
+
+                            self.pop_auto_queue().unwrap()
+                        }
+                    };
+
+                    track
+                }
+            }
+        } else {
+            let next_track = self.manual_queue_mut().pop_front().unwrap();
+
+            next_track
+        };
+
+        Some(track)
+    }
+
+    pub fn get_prev(&mut self) -> Option<Track> {
+        if self.playlist.history.is_empty() {
+            return None;
+        }
+
+        if self.from_auto {
+            let current = self.take_current()?;
+            self.playlist.history.push(Track {
+                index: current.index,
+                path: current.path,
+            });
+        }
+
+        let track = self.playlist.history.pop().unwrap();
+
+        Some(track)
+    }
+
+    pub fn seek_forward() {}
+    pub fn seek_backward() {}
+
+    pub fn cursor_up(&mut self, count: u16) {
+        match self.focused_widget {
+            Focus::Playlist => {
+                let playlist = &mut self.playlist;
+
+                let count = count as u16;
+                if playlist.cursor < count {
+                    let rest = count - playlist.cursor;
+                    playlist.y_offset = playlist.y_offset.saturating_sub(rest);
+                } else {
+                    playlist.cursor -= count;
+                }
+            }
+        }
+    }
+
+    pub fn cursor_down(&mut self, count: u16) {
+        match self.focused_widget {
+            Focus::Playlist => {
+                let playlist = &mut self.playlist;
+
+                let total = playlist.list.len() as u16;
+
+                if playlist.cursor + (count as u16) < playlist.area.height {
+                    playlist.cursor += count as u16;
+                } else if playlist.y_offset + playlist.area.height - 1 < total - 1 {
+                    playlist.y_offset += 1;
+                }
+            }
+        }
+    }
+
+    pub fn resize(&mut self, width: u16, height: u16) {
+        let area = Rect::new(0, 0, width, height);
+        let [_header_area, playlist_area, control_area] = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Length(1),
+                Constraint::Fill(1),
+                Constraint::Length(4),
+            ],
+        )
+        .areas(area);
+
+        self.playlist.resize(playlist_area);
+        self.control_bar.resize(control_area);
     }
 }
 
-impl Widget for &mut Player {
-    fn render(self, area: Rect, buf: &mut Buffer)
+impl StatefulWidget for &Player {
+    type State = Context;
+
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer, state: &mut Self::State)
     where
         Self: Sized,
     {
-        self.area = area;
-        self.cursor.render(area, buf);
+        let [header_area, main_area, control_area] = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Length(2),
+                Constraint::Fill(1),
+                Constraint::Length(4),
+            ],
+        )
+        .areas(area);
 
-        let current = self.current.as_ref();
-        let list = match current {
-            Some(current) => Text::from_iter(
-                self.tracks
-                    .iter()
-                    .skip(self.y_offset as usize)
-                    .enumerate()
-                    .map(|(i, t)| {
-                        let name = t.split("/").last().unwrap();
-
-                        let line = if current.path.contains(name)
-                            && current.index - self.y_offset as usize == i
-                        {
-                            let color = if self.cursor() == current.index as u16 {
-                                Color::Yellow
-                            } else {
-                                Color::Blue
-                            };
-
-                            Line::raw(name).fg(color)
-                        } else {
-                            Line::raw(name)
-                        };
-
-                        line
-                    }),
-            ),
-            None => Text::from_iter(
-                self.tracks
-                    .iter()
-                    .skip(self.y_offset as usize)
-                    .map(|t| Line::raw(t.split("/").last().unwrap())),
-            ),
-        };
-
-        list.render(area, buf);
+        self.header.render(header_area, buf);
+        self.playlist.render(main_area, buf);
+        self.control_bar.render(control_area, buf, state);
     }
-}
-
-#[derive(Debug)]
-pub struct CurrentTrack {
-    pub path: String,
-    pub duration: Duration,
-    pub index: usize,
-}
-
-#[derive(Debug)]
-pub struct Track {
-    pub path: String,
-    pub index: usize,
 }

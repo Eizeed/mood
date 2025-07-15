@@ -1,17 +1,16 @@
 use std::ops::Range;
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     text::Line,
-    widgets::{Block, Borders, Widget},
+    widgets::{Block, Borders, StatefulWidget, Widget},
 };
+
+use crate::app::{Context, Repeat, Shuffle};
 
 #[derive(Debug)]
 pub struct ControlBar {
     pub name: String,
-    pub repeat: Repeat,
-    pub random: bool,
-
     // TODO: in future when i will bring more styles
     // Create a tracker for duration something like
     // 0:52---3:22
@@ -19,86 +18,100 @@ pub struct ControlBar {
 
     // duration
     // pos
-    pub progress: Option<f32>,
 
-    control_bar_y: Option<u16>,
+    pub control_bar_y: u16,
 
-    shuffle_pos: Option<Range<u16>>,
-    seek_backward_pos: Option<Range<u16>>,
-    pause_pos: Option<Range<u16>>,
-    seek_forward_pos: Option<Range<u16>>,
-    repeat_pos: Option<Range<u16>>,
-}
-
-#[derive(Debug)]
-pub enum Repeat {
-    None,
-    RepeatQueue,
-    RepeatOne,
+    pub shuffle_pos: Range<u16>,
+    pub seek_backward_pos: Range<u16>,
+    pub pause_pos: Range<u16>,
+    pub seek_forward_pos: Range<u16>,
+    pub repeat_pos: Range<u16>,
 }
 
 impl ControlBar {
-    pub fn new() -> Self {
+    pub fn new(area: Rect) -> Self {
+        let [_, _, _, button_area] = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ],
+        )
+        .areas(area);
+
+        let [_, area, _] = Layout::new(
+            Direction::Horizontal,
+            [
+                Constraint::Fill(1),
+                Constraint::Length(19),
+                Constraint::Fill(1),
+            ],
+        )
+        .areas(button_area);
+
+        let start = area.x;
+
+        // bruh...
+        let control_bar_y = area.y;
+        let shuffle_pos = start..start + 3;
+        let seek_backward_pos = start + 4..start + 7;
+        let pause_pos = start + 8..start + 11;
+        let seek_forward_pos = start + 12..start + 15;
+        let repeat_pos = start + 16..start + 19;
+
         ControlBar {
             name: "".to_string(),
-            repeat: Repeat::None,
-            random: false,
-            progress: None,
 
-            control_bar_y: None,
+            control_bar_y,
 
-            shuffle_pos: None,
-            seek_backward_pos: None,
-            pause_pos: None,
-            seek_forward_pos: None,
-            repeat_pos: None,
+            shuffle_pos,
+            seek_backward_pos,
+            pause_pos,
+            seek_forward_pos,
+            repeat_pos,
         }
     }
 
-    pub fn control_bar_y(&self) -> u16 {
-        self.control_bar_y.unwrap()
-    }
+    pub fn resize(&mut self, area: Rect) {
+        let [_, _, _, button_area] = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ],
+        )
+        .areas(area);
 
-    pub fn shuffle_pos(&self) -> &Range<u16> {
-        self.shuffle_pos.as_ref().unwrap()
-    }
+        let [_, area, _] = Layout::new(
+            Direction::Horizontal,
+            [
+                Constraint::Fill(1),
+                Constraint::Length(19),
+                Constraint::Fill(1),
+            ],
+        )
+        .areas(button_area);
 
-    pub fn seek_backward_pos(&self) -> &Range<u16> {
-        self.seek_backward_pos.as_ref().unwrap()
-    }
+        let start = area.x;
 
-    pub fn pause_pos(&self) -> &Range<u16> {
-        self.pause_pos.as_ref().unwrap()
-    }
-
-    pub fn seek_forward_pos(&self) -> &Range<u16> {
-        self.seek_forward_pos.as_ref().unwrap()
-    }
-
-    pub fn repeat_pos(&self) -> &Range<u16> {
-        self.repeat_pos.as_ref().unwrap()
-    }
-
-    pub fn toggle_repeat(&mut self) {
-        match self.repeat {
-            Repeat::None => {
-                self.repeat = Repeat::RepeatQueue;
-            }
-            Repeat::RepeatQueue => {
-                self.repeat = Repeat::RepeatOne;
-            }
-            Repeat::RepeatOne => {
-                self.repeat = Repeat::None;
-            }
-        }
+        // bruh...
+        self.control_bar_y = area.y;
+        self.shuffle_pos = start..start + 3;
+        self.seek_backward_pos = start + 4..start + 7;
+        self.pause_pos = start + 8..start + 11;
+        self.seek_forward_pos = start + 12..start + 15;
+        self.repeat_pos = start + 16..start + 19;
     }
 }
 
-impl Widget for &mut ControlBar {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
+impl StatefulWidget for &ControlBar {
+    type State = Context;
+
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer, state: &mut Self::State) {
         debug_assert!(area.height == 4);
 
         let [border, name_area, progress_area, button_area] = Layout::new(
@@ -130,10 +143,7 @@ impl Widget for &mut ControlBar {
 
         {
             let width = progress_area.width;
-            let progress = match self.progress {
-                Some(progress) => progress * 100.0,
-                None => 0.0,
-            };
+            let progress =  state.progress * 100.0;
 
             let one_cell_rat = 100.0 / width as f32;
 
@@ -162,45 +172,38 @@ impl Widget for &mut ControlBar {
             .areas(button_area);
 
             // This section looks really really REALLY bad. But it works!
-            let control = match self.repeat {
-                Repeat::None | Repeat::RepeatQueue => "[s] [<] [\u{23F8}] [>] [r]",
-                Repeat::RepeatOne => "[s] [<] [\u{23F8}] [>] [R]",
+            let control = match state.repeat {
+                Repeat::None | Repeat::Queue => "[s] [<] [\u{23F8}] [>] [r]",
+                Repeat::One => "[s] [<] [\u{23F8}] [>] [R]",
             };
 
-            let start = button_area.x;
-
-            // bruh...
-            self.control_bar_y = Some(button_area.y);
-            self.shuffle_pos = Some(start..start + 3);
-            self.seek_backward_pos = Some(start + 4..start + 7);
-            self.pause_pos = Some(start + 8..start + 11);
-            self.seek_forward_pos = Some(start + 12..start + 15);
-            self.repeat_pos = Some(start + 16..start + 19);
-
-            if self.random {
-                for i in self.shuffle_pos.as_ref().unwrap().clone() {
-                    buf.cell_mut((i, button_area.y))
-                        .unwrap()
-                        .set_fg(ratatui::style::Color::Green);
-                }
-            } else {
-                for i in self.shuffle_pos.as_ref().unwrap().clone() {
-                    buf.cell_mut((i, button_area.y))
-                        .unwrap()
-                        .set_fg(ratatui::style::Color::Reset);
-                }
-            }
-
-            match self.repeat {
-                Repeat::None => {
-                    for i in self.repeat_pos().clone() {
+            match state.shuffle {
+                Shuffle::None => {
+                    for i in self.shuffle_pos.clone() {
                         buf.cell_mut((i, button_area.y))
                             .unwrap()
                             .set_fg(ratatui::style::Color::Reset);
                     }
                 }
-                Repeat::RepeatQueue | Repeat::RepeatOne => {
-                    for i in self.repeat_pos().clone() {
+                Shuffle::Random => {
+                    for i in self.shuffle_pos.clone() {
+                        buf.cell_mut((i, button_area.y))
+                            .unwrap()
+                            .set_fg(ratatui::style::Color::Green);
+                    }
+                }
+            };
+
+            match state.repeat {
+                Repeat::None => {
+                    for i in self.repeat_pos.clone() {
+                        buf.cell_mut((i, button_area.y))
+                            .unwrap()
+                            .set_fg(ratatui::style::Color::Reset);
+                    }
+                }
+                Repeat::Queue | Repeat::One => {
+                    for i in self.repeat_pos.clone() {
                         buf.cell_mut((i, button_area.y))
                             .unwrap()
                             .set_fg(ratatui::style::Color::Green);

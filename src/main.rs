@@ -1,4 +1,6 @@
-use crate::{app::App, io::get_config, widget::Player};
+use ratatui::layout::Rect;
+
+use crate::{app::App, io::get_config};
 
 mod app;
 mod config;
@@ -11,9 +13,11 @@ fn main() {
     let terminal = ratatui::init();
 
     let config = get_config();
-    let player = Player::new(config.audio_dir);
 
-    let app = App::with_player(player);
+    let size = terminal.size().unwrap();
+    let area = Rect::new(0, 0, size.width, size.height);
+
+    let app = App::new(config.audio_dir, area);
     app.start(terminal);
 
     ratatui::restore();
