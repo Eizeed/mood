@@ -10,6 +10,7 @@ pub enum Command {
 
     VolumeUp(f32),
     VolumeDown(f32),
+    SetVolume(f32),
 
     SeekForward(Duration),
     SeekBackward(Duration),
@@ -23,6 +24,7 @@ impl Debug for Command {
             Command::Resume => f.write_str("Resume"),
             Command::VolumeUp(_) => f.write_str("VolumeUp"),
             Command::VolumeDown(_) => f.write_str("VolumeDown"),
+            Command::SetVolume(_) => f.write_str("SetVolume"),
             Command::SeekForward(_) => f.write_str("SeekForward"),
             Command::SeekBackward(_) => f.write_str("SeekBackward"),
         }
@@ -143,7 +145,6 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
             let command = match rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(command) => command,
                 Err(err) => {
-                    // eprintln!("Error: {}", err);
                     match err {
                         RecvTimeoutError::Timeout => {
                             if !sink.empty() && !sink.is_paused() {
@@ -158,7 +159,6 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
 
             match command {
                 Command::Play(source) => {
-                    eprintln!("Play command");
                     let source = NotifySource {
                         inner: source,
                         main_handle: tx.clone(),
@@ -211,11 +211,13 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
 
                     tx.send(Message::CurrentVolume(sink.volume())).unwrap();
                 }
+                Command::SetVolume(vol) => {
+                    sink.set_volume(vol);
+                }
                 // TODO: Sometimes when it fires it will send track ended
                 // but main thread won't do anything. UI freezes and inputs are not readen
                 // UPD: I still don't know but i guess it's fixed
                 Command::SeekForward(duration) => {
-                    eprintln!("SeekFroward command");
                     let pos = sink.get_pos();
 
                     if !sink.empty() {

@@ -17,7 +17,7 @@ fn main() {
     let size = terminal.size().unwrap();
     let area = Rect::new(0, 0, size.width, size.height);
 
-    let app = App::new(config.audio_dir, area);
+    let app = App::new(config, area);
     app.start(terminal);
 
     ratatui::restore();

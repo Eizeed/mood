@@ -1,25 +1,34 @@
 use std::{
     io::{BufReader, stdout},
-    path::PathBuf,
     time::{Duration, Instant},
 };
 
 use crossbeam_channel::{Receiver, Sender};
 
 use ratatui::{
+    Terminal,
     crossterm::{
+        ExecutableCommand,
         event::{
-            DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind
-        }, ExecutableCommand
-    }, layout::Rect, prelude::Backend, widgets::{StatefulWidget, Widget}, Terminal
+            DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+            MouseButton, MouseEventKind,
+        },
+    },
+    layout::Rect,
+    prelude::Backend,
+    widgets::{StatefulWidget, Widget},
 };
 use rodio::Source;
 
 use crate::{
+    config::Config,
     input::spawn_input,
     io::get_files,
     music::{Command, Message, spawn_music},
-    widget::{Player, playlist::CurrentTrack, playlist::Track},
+    widget::{
+        Player,
+        playlist::{CurrentTrack, Track},
+    },
 };
 
 pub struct App {
@@ -55,7 +64,7 @@ pub enum Shuffle {
 }
 
 impl App {
-    pub fn new(audio_dir: PathBuf, area: Rect) -> Self {
+    pub fn new(config: Config, area: Rect) -> Self {
         let (main_audio_tx, main_audio_rx) = crossbeam_channel::bounded::<Command>(64);
         let (audio_main_tx, audio_main_rx) = crossbeam_channel::bounded::<Message>(64);
 
@@ -64,20 +73,18 @@ impl App {
         spawn_music(main_audio_rx, audio_main_tx);
         spawn_input(input_main_tx);
 
-        let Message::CurrentVolume(volume) = audio_main_rx.recv().unwrap() else {
-            unreachable!("How tf you here (Recieved not Message::CurrentVolume)");
-        };
+        main_audio_tx.send(Command::SetVolume(config.volume)).unwrap();
 
-        let playlist = get_files(audio_dir, "mp3");
+        let playlist = get_files(config.audio_dir, "mp3");
 
         let player = Player::new(playlist, area);
 
         App {
             paused: false,
             progress: 0.0,
-            volume,
-            repeat: Repeat::None,
-            shuffle: Shuffle::None,
+            volume: config.volume,
+            repeat: config.repeat,
+            shuffle: config.shuffle,
 
             should_exit: false,
 
@@ -141,7 +148,7 @@ impl App {
                 let modifiers = k.modifiers;
 
                 if KeyEventKind::Release == k.kind {
-                    return
+                    return;
                 };
 
                 match keycode {
@@ -255,6 +262,8 @@ impl App {
                         index: current.index,
                         path: current.path.clone(),
                     });
+
+                    return;
                 };
 
                 let Some(track) = self.player.get_next(self.repeat) else {

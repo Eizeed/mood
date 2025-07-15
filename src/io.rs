@@ -1,11 +1,14 @@
 use std::path::{Path, PathBuf};
 
-use crate::config::Config;
+use crate::{
+    app::{Repeat, Shuffle},
+    config::Config,
+};
 
 pub fn get_config() -> Config {
+    let mut config = Config::default();
+
     let mut conf_dir = dirs::config_dir().expect("No config dir? :(");
-    let mut home_dir = dirs::home_dir().expect("No home dir? :(");
-    home_dir.push("music");
 
     conf_dir.push("mood");
 
@@ -13,9 +16,7 @@ pub fn get_config() -> Config {
 
     conf_dir.push("mood.conf");
     let Some(blob) = std::fs::read_to_string(conf_dir).ok() else {
-        return Config {
-            audio_dir: home_dir,
-        };
+        return config;
     };
 
     for line in blob.lines() {
@@ -23,16 +24,47 @@ pub fn get_config() -> Config {
         let key = iter.next().unwrap().trim().to_string();
         let val = iter.next().unwrap().trim().to_string();
 
-        if key == "audio_path" {
-            return Config {
-                audio_dir: val.into(),
-            };
-        }
+        match key.as_str() {
+            "audio_path" => {
+                config.audio_dir = val.into();
+            }
+            "volume" => {
+                let vol = val.parse();
+                match vol {
+                    Ok(vol) => {
+                        let vol = if vol > 1.0 {
+                            1.0
+                        } else if vol < 0.0 {
+                            0.0
+                        } else {
+                            vol
+                        };
+
+                        config.volume = vol;
+                    }
+                    Err(_) => {}
+                }
+            }
+            "shuffle" => {
+                config.shuffle = match val.as_str() {
+                    "0" => Shuffle::None,
+                    "1" => Shuffle::Random,
+                    _ => config.shuffle,
+                }
+            }
+            "repeat" => {
+                config.repeat = match val.as_str() {
+                    "0" => Repeat::None,
+                    "1" => Repeat::Queue,
+                    "2" => Repeat::One,
+                    _ => config.repeat,
+                }
+            }
+            _ => {}
+        };
     }
 
-    Config {
-        audio_dir: home_dir,
-    }
+    config
 }
 
 pub fn get_files<T: AsRef<Path>>(path: T, extension: &str) -> Vec<PathBuf> {
