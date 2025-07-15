@@ -7,17 +7,11 @@ use std::{
 use crossbeam_channel::{Receiver, Sender};
 
 use ratatui::{
-    Terminal,
     crossterm::{
-        ExecutableCommand,
         event::{
-            DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
-            MouseEventKind,
-        },
-    },
-    layout::Rect,
-    prelude::Backend,
-    widgets::{StatefulWidget, Widget},
+            DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind
+        }, ExecutableCommand
+    }, layout::Rect, prelude::Backend, widgets::{StatefulWidget, Widget}, Terminal
 };
 use rodio::Source;
 
@@ -145,6 +139,10 @@ impl App {
             Event::Key(k) => {
                 let keycode = k.code;
                 let modifiers = k.modifiers;
+
+                if KeyEventKind::Release == k.kind {
+                    return
+                };
 
                 match keycode {
                     KeyCode::Esc => self.should_exit = true,

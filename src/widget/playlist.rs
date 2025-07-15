@@ -55,10 +55,7 @@ impl Playlist {
 
     pub fn get_under_cursor(&self) -> Track {
         let index = (self.cursor + self.y_offset) as usize;
-        assert!(
-            index < self.list.len(),
-            "Index of cursor is out of bounds"
-        );
+        assert!(index < self.list.len(), "Index of cursor is out of bounds");
 
         let path = self.list[index].clone();
 
@@ -82,42 +79,40 @@ impl Widget for &Playlist {
         }
 
         let current = self.current_track.as_ref();
-        let list = match current {
-            Some(current) => Text::from_iter(
-                self.list
-                    .iter()
-                    .skip(self.y_offset as usize)
-                    .enumerate()
-                    .map(|(i, t)| {
-                        let path = t.to_string_lossy();
-                        let name = path.split("/").last().unwrap().to_string();
+        let list =
+            match current {
+                Some(current) => Text::from_iter(
+                    self.list
+                        .iter()
+                        .skip(self.y_offset as usize)
+                        .enumerate()
+                        .map(|(i, t)| {
+                            let path = t.to_string_lossy();
+                            let name = path.split("/").last().unwrap().to_string();
 
-                        // NOTE: Idk what this is doing (i wrote it)
-                        // spend some time in future to understand
-                        let line = if current.path.to_string_lossy().contains(&name)
-                            && current.index - self.y_offset as usize == i
-                        {
-                            let color = if self.cursor + self.y_offset == current.index as u16 {
-                                Color::Yellow
+                            // NOTE: Idk what this is doing (i wrote it)
+                            // spend some time in future to understand
+                            let line = if current.path.to_string_lossy().contains(&name)
+                                && current.index - self.y_offset as usize == i
+                            {
+                                let color = if self.cursor + self.y_offset == current.index as u16 {
+                                    Color::Yellow
+                                } else {
+                                    Color::Blue
+                                };
+
+                                Line::raw(name).fg(color)
                             } else {
-                                Color::Blue
+                                Line::raw(name)
                             };
 
-                            Line::raw(name).fg(color)
-                        } else {
-                            Line::raw(name)
-                        };
-
-                        line
-                    }),
-            ),
-            None => Text::from_iter(
-                self.list
-                    .iter()
-                    .skip(self.y_offset as usize)
-                    .map(|t| Line::raw(t.to_string_lossy().split("/").last().unwrap().to_string())),
-            ),
-        };
+                            line
+                        }),
+                ),
+                None => Text::from_iter(self.list.iter().skip(self.y_offset as usize).map(|t| {
+                    Line::raw(t.to_string_lossy().split("/").last().unwrap().to_string())
+                })),
+            };
 
         list.render(area, buf);
     }
