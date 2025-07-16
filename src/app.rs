@@ -19,17 +19,15 @@ use ratatui::{
     prelude::Backend,
     widgets::{StatefulWidget, Widget},
 };
-use rodio::Source;
+use rusqlite::Connection;
+use uuid::Uuid;
 
 use crate::{
     config::Config,
     input::spawn_input,
-    io::get_files,
+    io::{add_uuid_metadata, get_files},
     music::{Command, Message, spawn_music},
-    widget::{
-        Player,
-        playlist::{CurrentTrack, Track},
-    },
+    widget::{Player, playlist::Track},
 };
 
 pub struct App {
@@ -50,6 +48,8 @@ pub struct App {
     audio_rx: Receiver<Message>,
 
     input_rx: Receiver<Event>,
+
+    db_conn: Connection,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,6 +67,8 @@ pub enum Shuffle {
 
 impl App {
     pub fn new(config: Config, area: Rect) -> Self {
+        let conn = Connection::open(config.database_path).unwrap();
+
         let (main_audio_tx, main_audio_rx) = crossbeam_channel::bounded::<Command>(64);
         let (audio_main_tx, audio_main_rx) = crossbeam_channel::bounded::<Message>(64);
 
@@ -79,9 +81,43 @@ impl App {
             .send(Command::SetVolume(config.volume))
             .unwrap();
 
-        let playlist = get_files(config.audio_dir, "mp3");
+        let paths = get_files(config.audio_dir_path, "mp3");
 
-        let player = Player::new(playlist, area);
+        let tracks = add_uuid_metadata(paths);
+
+        conn.execute(
+            r#"
+                CREATE TABLE IF NOT EXISTS playlists (
+                    uuid        TEXT PRIMARY KEY,
+                    path        TEXT NOT NULL UNIQUE
+                );
+            "#,
+            (),
+        )
+        .unwrap();
+
+        let uuids: Vec<Uuid> = {
+            let mut stmt = conn.prepare(" SELECT uuid, path FROM playlists;").unwrap();
+
+            stmt.query_map((), |row| row.get("uuid"))
+                .unwrap()
+                .map(|r: Result<Box<str>, _>| Uuid::parse_str(&r.unwrap()).unwrap())
+                .collect()
+        };
+
+        tracks
+            .iter()
+            .filter(|track| uuids.iter().find(|uuid| **uuid == track.uuid).is_none())
+            .for_each(|t| {
+                eprintln!("Added track to database: {:?}", t.path.file_name().unwrap());
+                conn.execute(
+                    "INSERT INTO playlists (uuid, path) VALUES (?1, ?2)",
+                    (t.uuid.to_string(), t.path.to_string_lossy()),
+                )
+                .unwrap();
+            });
+
+        let player = Player::new(tracks, area);
 
         App {
             paused: false,
@@ -95,9 +131,12 @@ impl App {
             player,
             start_timer: Instant::now(),
             last_seek_timer: Instant::now(),
+
             audio_tx: main_audio_tx,
             audio_rx: audio_main_rx,
             input_rx: input_main_rx,
+
+            db_conn: conn,
         }
     }
 
@@ -202,15 +241,7 @@ impl App {
 
                         match self.shuffle {
                             Shuffle::Random => {
-                                self.player.playlist.list = self
-                                    .player
-                                    .playlist
-                                    .base
-                                    .clone()
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(index, path)| Track { index, path })
-                                    .collect();
+                                self.player.playlist.list = self.player.playlist.base.clone();
 
                                 self.player.playlist.list.swap(track.index, 0);
                                 self.player.playlist.list[1..].shuffle(&mut rand::rng());
@@ -282,11 +313,8 @@ impl App {
         match message {
             Message::TrackEnded => {
                 if let Repeat::One = self.repeat {
-                    let current = self.player.get_current().unwrap();
-                    self.play(Track {
-                        index: current.index,
-                        path: current.path.clone(),
-                    });
+                    let current = self.player.get_current().unwrap().clone();
+                    self.play(current);
 
                     return;
                 };
@@ -315,16 +343,11 @@ impl App {
     pub fn play(&mut self, track: Track) {
         let file = std::fs::File::open(&track.path).unwrap();
         let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
-        let duration = source.total_duration().unwrap_or(Duration::from_secs(0));
 
         self.audio_tx.send(Command::play(source)).unwrap();
         self.start_timer = Instant::now();
 
-        self.player.set_current(CurrentTrack {
-            index: track.index,
-            path: track.path,
-            duration,
-        });
+        self.player.set_current(track);
     }
 
     pub fn seek_backward(&mut self, duration: Duration) {
@@ -368,7 +391,6 @@ impl App {
     }
 
     pub fn play_prev(&mut self) {
-        eprintln!("{:#?}", self.player.playlist.history);
         let track = match self.player.get_prev() {
             Some(track) => track,
             None => {
@@ -381,8 +403,6 @@ impl App {
                 track
             }
         };
-
-        eprintln!("{:?}", track);
 
         self.play(track);
     }

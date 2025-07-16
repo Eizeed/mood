@@ -7,16 +7,17 @@ use ratatui::{
     text::{Line, Text},
     widgets::Widget,
 };
+use uuid::Uuid;
 
 pub struct Playlist {
-    pub base: Vec<PathBuf>,
+    pub base: Vec<Track>,
 
     pub list: Vec<Track>,
     pub auto_queue: VecDeque<Track>,
     pub manual_queue: VecDeque<Track>,
     pub history: Vec<Track>,
 
-    pub current_track: Option<CurrentTrack>,
+    pub current_track: Option<Track>,
 
     pub cursor: u16,
     pub show_cursor: bool,
@@ -29,28 +30,16 @@ pub struct Playlist {
 #[derive(Debug, Clone)]
 pub struct Track {
     pub index: usize,
-    pub path: PathBuf,
-}
-
-#[derive(Debug)]
-pub struct CurrentTrack {
-    pub index: usize,
-    pub path: PathBuf,
+    pub uuid: Uuid,
     pub duration: Duration,
+    pub path: PathBuf,
 }
 
 impl Playlist {
-    pub fn new(paths: Vec<PathBuf>, area: Rect) -> Self {
+    pub fn new(paths: Vec<Track>, area: Rect) -> Self {
         Playlist {
             base: paths.clone(),
-            list: paths
-                .into_iter()
-                .enumerate()
-                .map(|(idx, p)| Track {
-                    index: idx,
-                    path: p,
-                })
-                .collect(),
+            list: paths,
             auto_queue: VecDeque::new(),
             manual_queue: VecDeque::new(),
             history: Vec::new(),
@@ -66,9 +55,9 @@ impl Playlist {
         let index = (self.cursor + self.y_offset) as usize;
         assert!(index < self.base.len(), "Index of cursor is out of bounds");
 
-        let path = self.base[index].clone();
+        let track = self.base[index].clone();
 
-        Track { index, path }
+        track
     }
 
     pub fn cursor_up(&mut self, count: u16) {
@@ -109,40 +98,46 @@ impl Widget for &Playlist {
         }
 
         let current = self.current_track.as_ref();
-        let list =
-            match current {
-                Some(current) => Text::from_iter(
-                    self.base
-                        .iter()
-                        .skip(self.y_offset as usize)
-                        .enumerate()
-                        .map(|(i, t)| {
-                            let path = t.to_string_lossy();
-                            let name = path.split("/").last().unwrap().to_string();
+        let list = match current {
+            Some(current) => Text::from_iter(
+                self.base
+                    .iter()
+                    .skip(self.y_offset as usize)
+                    .enumerate()
+                    .map(|(i, t)| {
+                        let path = t.path.to_string_lossy();
+                        let name = path.split("/").last().unwrap().to_string();
 
-                            // NOTE: Idk what this is doing (i wrote it)
-                            // spend some time in future to understand
-                            let line = if current.path.to_string_lossy().contains(&name)
-                                && current.index - self.y_offset as usize == i
-                            {
-                                let color = if self.cursor + self.y_offset == current.index as u16 {
-                                    Color::Yellow
-                                } else {
-                                    Color::Blue
-                                };
-
-                                Line::raw(name).fg(color)
+                        // NOTE: Idk what this is doing (i wrote it)
+                        // spend some time in future to understand
+                        let line = if current.path.to_string_lossy().contains(&name)
+                            && current.index - self.y_offset as usize == i
+                        {
+                            let color = if self.cursor + self.y_offset == current.index as u16 {
+                                Color::Yellow
                             } else {
-                                Line::raw(name)
+                                Color::Blue
                             };
 
-                            line
-                        }),
-                ),
-                None => Text::from_iter(self.base.iter().skip(self.y_offset as usize).map(|t| {
-                    Line::raw(t.to_string_lossy().split("/").last().unwrap().to_string())
-                })),
-            };
+                            Line::raw(name).fg(color)
+                        } else {
+                            Line::raw(name)
+                        };
+
+                        line
+                    }),
+            ),
+            None => Text::from_iter(self.base.iter().skip(self.y_offset as usize).map(|t| {
+                Line::raw(
+                    t.path
+                        .to_string_lossy()
+                        .split("/")
+                        .last()
+                        .unwrap()
+                        .to_string(),
+                )
+            })),
+        };
 
         list.render(area, buf);
     }

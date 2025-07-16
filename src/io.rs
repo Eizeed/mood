@@ -1,8 +1,17 @@
 use std::path::{Path, PathBuf};
 
+use lofty::{
+    config::WriteOptions,
+    file::{AudioFile, TaggedFileExt},
+    read_from_path,
+    tag::{ItemKey, ItemValue, Tag, TagItem},
+};
+use uuid::Uuid;
+
 use crate::{
     app::{Repeat, Shuffle},
     config::Config,
+    widget::playlist::Track,
 };
 
 pub fn get_config() -> Config {
@@ -26,7 +35,7 @@ pub fn get_config() -> Config {
 
         match key.as_str() {
             "audio_path" => {
-                config.audio_dir = val.into();
+                config.audio_dir_path = val.into();
             }
             "volume" => {
                 let vol = val.parse();
@@ -92,4 +101,63 @@ pub fn get_files<T: AsRef<Path>>(path: T, extension: &str) -> Vec<PathBuf> {
     }
 
     files
+}
+
+// Maybe this is bad, idk...
+pub fn add_uuid_metadata<T>(paths: Vec<T>) -> Vec<Track>
+where
+    T: Into<PathBuf>,
+{
+    paths
+        .into_iter()
+        .enumerate()
+        .map(|(index, p)| {
+            let p = p.into();
+
+            let mut tagged = read_from_path(&p).unwrap();
+            let duration = tagged.properties().duration();
+
+            let tag = match tagged.primary_tag_mut() {
+                Some(tag) => {
+                    if let Some(val) = tag
+                        .get(&ItemKey::Unknown("MOOD_UUID".to_string()))
+                        .map(|t| t.value())
+                    {
+                        if let ItemValue::Text(uuid) = val {
+                            if let Ok(uuid) = Uuid::parse_str(uuid) {
+                                return Track {
+                                    index,
+                                    uuid,
+                                    duration,
+                                    path: p,
+                                };
+                            };
+                        }
+                    }
+
+                    tag
+                }
+                None => {
+                    let tag = Tag::new(tagged.file_type().primary_tag_type());
+                    tagged.insert_tag(tag);
+                    tagged.primary_tag_mut().unwrap()
+                }
+            };
+
+            let uuid = Uuid::new_v4();
+
+            tag.insert_unchecked(TagItem::new(
+                ItemKey::Unknown("MOOD_UUID".into()),
+                ItemValue::Text(uuid.to_string()),
+            ));
+
+            tagged.save_to_path(&p, WriteOptions::default()).unwrap();
+            Track {
+                index,
+                uuid,
+                duration,
+                path: p,
+            }
+        })
+        .collect()
 }

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf};
+use std::collections::VecDeque;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -9,7 +9,7 @@ use crate::{
     app::{Context, Repeat},
     widget::{
         ControlBar, Header, Playlist,
-        playlist::{CurrentTrack, Track},
+        playlist::Track,
     },
 };
 
@@ -30,7 +30,7 @@ pub enum Focus {
 }
 
 impl Player {
-    pub fn new(playlist: Vec<PathBuf>, area: Rect) -> Self {
+    pub fn new(playlist: Vec<Track>, area: Rect) -> Self {
         let [header_area, playlist_area, control_area] = Layout::new(
             Direction::Vertical,
             [
@@ -42,7 +42,7 @@ impl Player {
         .areas(area);
 
         Player {
-            header: Header::new("ta".to_string(), header_area),
+            header: Header::new("HEADER".to_string(), header_area),
             playlist: Playlist::new(playlist, playlist_area),
             control_bar: ControlBar::new(control_area),
 
@@ -66,15 +66,15 @@ impl Player {
         self.playlist.auto_queue = after.into();
     }
 
-    pub fn get_current(&self) -> Option<&CurrentTrack> {
+    pub fn get_current(&self) -> Option<&Track> {
         self.playlist.current_track.as_ref()
     }
 
-    pub fn take_current(&mut self) -> Option<CurrentTrack> {
+    pub fn take_current(&mut self) -> Option<Track> {
         self.playlist.current_track.take()
     }
 
-    pub fn set_current(&mut self, current: CurrentTrack) {
+    pub fn set_current(&mut self, current: Track) {
         let name = current.path.file_stem().unwrap();
 
         self.control_bar.name = name.to_string_lossy().to_string();
@@ -108,19 +108,13 @@ impl Player {
                     };
 
                     let current = self.take_current()?;
-                    self.playlist.history.push(Track {
-                        index: current.index,
-                        path: current.path,
-                    });
+                    self.playlist.history.push(current);
 
                     track
                 }
                 Repeat::Queue | Repeat::One => {
                     let current = self.take_current()?;
-                    self.playlist.history.push(Track {
-                        index: current.index,
-                        path: current.path,
-                    });
+                    self.playlist.history.push(current);
 
                     let track = match self.pop_auto_queue() {
                         Some(track) => track,
@@ -150,10 +144,7 @@ impl Player {
 
         if self.from_auto {
             let current = self.take_current()?;
-            self.playlist.auto_queue.push_front(Track {
-                index: current.index,
-                path: current.path,
-            });
+            self.playlist.auto_queue.push_front(current);
         }
 
         let track = self.playlist.history.pop().unwrap();
