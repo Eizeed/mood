@@ -29,6 +29,8 @@ pub struct ControlBar {
 }
 
 impl ControlBar {
+    pub const HEIGHT: u16 = 4;
+
     pub fn new(area: Rect) -> Self {
         let [_, _, _, button_area] = Layout::new(
             Direction::Vertical,

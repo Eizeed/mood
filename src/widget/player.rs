@@ -31,20 +31,18 @@ pub enum Focus {
 
 impl Player {
     pub fn new(playlist: Vec<PathBuf>, area: Rect) -> Self {
-        let [_header_area, playlist_area, control_area] = Layout::new(
+        let [header_area, playlist_area, control_area] = Layout::new(
             Direction::Vertical,
             [
-                Constraint::Length(2),
+                Constraint::Length(Header::HEIGHT),
                 Constraint::Fill(1),
-                Constraint::Length(4),
+                Constraint::Length(ControlBar::HEIGHT),
             ],
         )
         .areas(area);
 
         Player {
-            header: Header {
-                msg: "Hello world".to_string(),
-            },
+            header: Header::new("ta".to_string(), header_area),
             playlist: Playlist::new(playlist, playlist_area),
             control_bar: ControlBar::new(control_area),
 
@@ -54,8 +52,6 @@ impl Player {
             area,
         }
     }
-
-    // pub fn change_playlist(&mut self, playlist: Vec<PathBuf>) {}
 
     pub fn push_front_manual_queue(&mut self, track: Track) {
         self.playlist.manual_queue.push_back(track);
@@ -96,10 +92,6 @@ impl Player {
         self.control_bar.name = "".to_string();
         self.playlist.current_track = None;
     }
-
-    pub fn toggle_repeat() {}
-    pub fn toggle_shuffle() {}
-    pub fn toggle_pause() {}
 
     pub fn get_under_cursor(&self) -> Track {
         self.playlist.get_under_cursor()
@@ -183,21 +175,10 @@ impl Player {
         Some(track)
     }
 
-    pub fn seek_forward() {}
-    pub fn seek_backward() {}
-
     pub fn cursor_up(&mut self, count: u16) {
         match self.focused_widget {
             Focus::Playlist => {
-                let playlist = &mut self.playlist;
-
-                let count = count as u16;
-                if playlist.cursor < count {
-                    let rest = count - playlist.cursor;
-                    playlist.y_offset = playlist.y_offset.saturating_sub(rest);
-                } else {
-                    playlist.cursor -= count;
-                }
+                self.playlist.cursor_up(count);
             }
         }
     }
@@ -205,34 +186,24 @@ impl Player {
     pub fn cursor_down(&mut self, count: u16) {
         match self.focused_widget {
             Focus::Playlist => {
-                let playlist = &mut self.playlist;
-
-                let total = playlist.list.len() as u16;
-
-                if playlist.cursor + (count as u16) < playlist.area.height
-                    && playlist.y_offset + playlist.cursor + (count as u16)
-                        < playlist.list.len() as u16
-                {
-                    playlist.cursor += count as u16;
-                } else if playlist.y_offset + playlist.area.height - 1 < total - 1 {
-                    playlist.y_offset += 1;
-                }
+                self.playlist.cursor_down(count);
             }
         }
     }
 
     pub fn resize(&mut self, width: u16, height: u16) {
         let area = Rect::new(0, 0, width, height);
-        let [_header_area, playlist_area, control_area] = Layout::new(
+        let [header_area, playlist_area, control_area] = Layout::new(
             Direction::Vertical,
             [
-                Constraint::Length(1),
+                Constraint::Length(Header::HEIGHT),
                 Constraint::Fill(1),
-                Constraint::Length(4),
+                Constraint::Length(ControlBar::HEIGHT),
             ],
         )
         .areas(area);
 
+        self.header.resize(header_area);
         self.playlist.resize(playlist_area);
         self.control_bar.resize(control_area);
     }
@@ -248,9 +219,9 @@ impl StatefulWidget for &Player {
         let [header_area, main_area, control_area] = Layout::new(
             Direction::Vertical,
             [
-                Constraint::Length(2),
+                Constraint::Length(Header::HEIGHT),
                 Constraint::Fill(1),
-                Constraint::Length(4),
+                Constraint::Length(ControlBar::HEIGHT),
             ],
         )
         .areas(area);

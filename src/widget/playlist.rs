@@ -62,6 +62,27 @@ impl Playlist {
         Track { index, path }
     }
 
+    pub fn cursor_up(&mut self, count: u16) {
+        if self.cursor < count {
+            let rest = count - self.cursor;
+            self.y_offset = self.y_offset.saturating_sub(rest);
+        } else {
+            self.cursor -= count;
+        }
+    }
+
+    pub fn cursor_down(&mut self, count: u16) {
+        let total = self.list.len() as u16;
+
+        if self.cursor + (count as u16) < self.area.height
+            && self.y_offset + self.cursor + (count as u16) < self.list.len() as u16
+        {
+            self.cursor += count as u16;
+        } else if self.y_offset + self.area.height - 1 < total - 1 {
+            self.y_offset += 1;
+        }
+    }
+
     pub fn resize(&mut self, area: Rect) {
         self.area = area;
     }
