@@ -193,6 +193,8 @@ impl App {
                         self.player.push_front_manual_queue(track);
                     }
                     KeyCode::Enter => {
+                        // Shuffle list here
+                        // self.player.playlist.list = 
                         let track = self.player.get_under_cursor();
 
                         self.player.set_auto_queue(track.index);

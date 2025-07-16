@@ -209,7 +209,10 @@ impl Player {
 
                 let total = playlist.list.len() as u16;
 
-                if playlist.cursor + (count as u16) < playlist.area.height {
+                if playlist.cursor + (count as u16) < playlist.area.height
+                    && playlist.y_offset + playlist.cursor + (count as u16)
+                        < playlist.list.len() as u16
+                {
                     playlist.cursor += count as u16;
                 } else if playlist.y_offset + playlist.area.height - 1 < total - 1 {
                     playlist.y_offset += 1;
