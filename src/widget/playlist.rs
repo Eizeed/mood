@@ -9,8 +9,9 @@ use ratatui::{
 };
 
 pub struct Playlist {
-    pub list: Vec<PathBuf>,
+    pub base: Vec<PathBuf>,
 
+    pub list: Vec<Track>,
     pub auto_queue: VecDeque<Track>,
     pub manual_queue: VecDeque<Track>,
     pub history: Vec<Track>,
@@ -25,7 +26,7 @@ pub struct Playlist {
     pub area: Rect,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Track {
     pub index: usize,
     pub path: PathBuf,
@@ -41,7 +42,15 @@ pub struct CurrentTrack {
 impl Playlist {
     pub fn new(paths: Vec<PathBuf>, area: Rect) -> Self {
         Playlist {
-            list: paths,
+            base: paths.clone(),
+            list: paths
+                .into_iter()
+                .enumerate()
+                .map(|(idx, p)| Track {
+                    index: idx,
+                    path: p,
+                })
+                .collect(),
             auto_queue: VecDeque::new(),
             manual_queue: VecDeque::new(),
             history: Vec::new(),
@@ -55,9 +64,9 @@ impl Playlist {
 
     pub fn get_under_cursor(&self) -> Track {
         let index = (self.cursor + self.y_offset) as usize;
-        assert!(index < self.list.len(), "Index of cursor is out of bounds");
+        assert!(index < self.base.len(), "Index of cursor is out of bounds");
 
-        let path = self.list[index].clone();
+        let path = self.base[index].clone();
 
         Track { index, path }
     }
@@ -72,7 +81,7 @@ impl Playlist {
     }
 
     pub fn cursor_down(&mut self, count: u16) {
-        let total = self.list.len() as u16;
+        let total = self.base.len() as u16;
 
         if self.cursor + (count as u16) < self.area.height
             && self.y_offset + self.cursor + (count as u16) < self.list.len() as u16
@@ -103,7 +112,7 @@ impl Widget for &Playlist {
         let list =
             match current {
                 Some(current) => Text::from_iter(
-                    self.list
+                    self.base
                         .iter()
                         .skip(self.y_offset as usize)
                         .enumerate()
@@ -113,6 +122,8 @@ impl Widget for &Playlist {
 
                             // NOTE: Idk what this is doing (i wrote it)
                             // spend some time in future to understand
+                            eprintln!("current index: {}", current.index);
+                            eprintln!("y offset: {}", self.y_offset);
                             let line = if current.path.to_string_lossy().contains(&name)
                                 && current.index - self.y_offset as usize == i
                             {
@@ -130,7 +141,7 @@ impl Widget for &Playlist {
                             line
                         }),
                 ),
-                None => Text::from_iter(self.list.iter().skip(self.y_offset as usize).map(|t| {
+                None => Text::from_iter(self.base.iter().skip(self.y_offset as usize).map(|t| {
                     Line::raw(t.to_string_lossy().split("/").last().unwrap().to_string())
                 })),
             };

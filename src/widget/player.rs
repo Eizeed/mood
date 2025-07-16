@@ -58,14 +58,7 @@ impl Player {
     }
 
     pub fn set_auto_queue(&mut self, index: usize) {
-        let mut list = self
-            .playlist
-            .list
-            .clone()
-            .into_iter()
-            .enumerate()
-            .map(|(i, path)| Track { index: i, path })
-            .collect::<Vec<Track>>();
+        let mut list = self.playlist.list.clone();
 
         let after = list.split_off(index);
 
@@ -132,14 +125,7 @@ impl Player {
                     let track = match self.pop_auto_queue() {
                         Some(track) => track,
                         None => {
-                            self.playlist.auto_queue = self
-                                .playlist
-                                .list
-                                .clone()
-                                .into_iter()
-                                .enumerate()
-                                .map(|(idx, path)| Track { index: idx, path })
-                                .collect();
+                            self.playlist.auto_queue = self.playlist.list.clone().into();
 
                             self.pop_auto_queue().unwrap()
                         }

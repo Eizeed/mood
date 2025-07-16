@@ -5,6 +5,7 @@ use std::{
 
 use crossbeam_channel::{Receiver, Sender};
 
+use rand::seq::SliceRandom;
 use ratatui::{
     Terminal,
     crossterm::{
@@ -43,6 +44,7 @@ pub struct App {
     player: Player,
 
     start_timer: Instant,
+    last_seek_timer: Instant,
 
     audio_tx: Sender<Command>,
     audio_rx: Receiver<Message>,
@@ -73,7 +75,9 @@ impl App {
         spawn_music(main_audio_rx, audio_main_tx);
         spawn_input(input_main_tx);
 
-        main_audio_tx.send(Command::SetVolume(config.volume)).unwrap();
+        main_audio_tx
+            .send(Command::SetVolume(config.volume))
+            .unwrap();
 
         let playlist = get_files(config.audio_dir, "mp3");
 
@@ -90,6 +94,7 @@ impl App {
 
             player,
             start_timer: Instant::now(),
+            last_seek_timer: Instant::now(),
             audio_tx: main_audio_tx,
             audio_rx: audio_main_rx,
             input_rx: input_main_rx,
@@ -193,11 +198,29 @@ impl App {
                         self.player.push_front_manual_queue(track);
                     }
                     KeyCode::Enter => {
-                        // Shuffle list here
-                        // self.player.playlist.list = 
                         let track = self.player.get_under_cursor();
 
-                        self.player.set_auto_queue(track.index);
+                        match self.shuffle {
+                            Shuffle::Random => {
+                                self.player.playlist.list = self
+                                    .player
+                                    .playlist
+                                    .base
+                                    .clone()
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(index, path)| Track { index, path })
+                                    .collect();
+
+                                self.player.playlist.list.swap(track.index, 0);
+                                self.player.playlist.list[1..].shuffle(&mut rand::rng());
+                                self.player.set_auto_queue(0);
+                            }
+                            _ => {
+                                self.player.set_auto_queue(track.index);
+                            }
+                        };
+
                         // TODO: Handle option
                         let track = self.player.pop_auto_queue().unwrap();
 
@@ -252,7 +275,7 @@ impl App {
                 self.player.resize(c, r);
             }
             _ => {}
-        }
+        };
     }
 
     fn handle_audio_rx(&mut self, message: Message) {
@@ -308,16 +331,24 @@ impl App {
         if self.start_timer.elapsed() < Duration::from_millis(100) {
             return;
         }
+        if self.last_seek_timer.elapsed() < Duration::from_millis(30) {
+            return;
+        }
         self.audio_tx
             .send(Command::seek_backward(duration))
             .unwrap();
+        self.last_seek_timer = Instant::now()
     }
 
     pub fn seek_forward(&mut self, duration: Duration) {
         if self.start_timer.elapsed() < Duration::from_millis(100) {
             return;
         }
+        if self.last_seek_timer.elapsed() < Duration::from_millis(30) {
+            return;
+        }
         self.audio_tx.send(Command::seek_forward(duration)).unwrap();
+        self.last_seek_timer = Instant::now()
     }
 
     pub fn play_next(&mut self) {
@@ -340,15 +371,7 @@ impl App {
         let track = match self.player.get_prev() {
             Some(track) => track,
             None => {
-                self.player.playlist.history = self
-                    .player
-                    .playlist
-                    .list
-                    .clone()
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, path)| Track { index: i, path })
-                    .collect();
+                self.player.playlist.history = self.player.playlist.list.clone();
 
                 let Some(track) = self.player.get_prev() else {
                     return;
