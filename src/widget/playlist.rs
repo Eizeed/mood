@@ -122,8 +122,6 @@ impl Widget for &Playlist {
 
                             // NOTE: Idk what this is doing (i wrote it)
                             // spend some time in future to understand
-                            eprintln!("current index: {}", current.index);
-                            eprintln!("y offset: {}", self.y_offset);
                             let line = if current.path.to_string_lossy().contains(&name)
                                 && current.index - self.y_offset as usize == i
                             {

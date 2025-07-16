@@ -368,6 +368,7 @@ impl App {
     }
 
     pub fn play_prev(&mut self) {
+        eprintln!("{:#?}", self.player.playlist.history);
         let track = match self.player.get_prev() {
             Some(track) => track,
             None => {
@@ -380,6 +381,8 @@ impl App {
                 track
             }
         };
+
+        eprintln!("{:?}", track);
 
         self.play(track);
     }

@@ -150,7 +150,7 @@ impl Player {
 
         if self.from_auto {
             let current = self.take_current()?;
-            self.playlist.history.push(Track {
+            self.playlist.auto_queue.push_front(Track {
                 index: current.index,
                 path: current.path,
             });
