@@ -1,23 +1,16 @@
-use std::{collections::VecDeque, path::PathBuf, time::Duration};
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Stylize},
+    style::Color,
     text::{Line, Text},
     widgets::Widget,
 };
-use uuid::Uuid;
 
+use crate::model;
+
+#[derive(Debug)]
 pub struct Playlist {
-    pub base: Vec<Track>,
-
-    pub list: Vec<Track>,
-    pub auto_queue: VecDeque<Track>,
-    pub manual_queue: VecDeque<Track>,
-    pub history: Vec<Track>,
-
-    pub current_track: Option<Track>,
+    pub list: Vec<model::Playlist>,
 
     pub cursor: u16,
     pub show_cursor: bool,
@@ -27,23 +20,10 @@ pub struct Playlist {
     pub area: Rect,
 }
 
-#[derive(Debug, Clone)]
-pub struct Track {
-    pub index: usize,
-    pub uuid: Uuid,
-    pub duration: Duration,
-    pub path: PathBuf,
-}
-
 impl Playlist {
-    pub fn new(paths: Vec<Track>, area: Rect) -> Self {
+    pub fn new(playlists: Vec<model::Playlist>, area: Rect) -> Self {
         Playlist {
-            base: paths.clone(),
-            list: paths,
-            auto_queue: VecDeque::new(),
-            manual_queue: VecDeque::new(),
-            history: Vec::new(),
-            current_track: None,
+            list: playlists,
             cursor: 0,
             show_cursor: true,
             y_offset: 0,
@@ -51,38 +31,13 @@ impl Playlist {
         }
     }
 
-    pub fn get_under_cursor(&self) -> Track {
-        let index = (self.cursor + self.y_offset) as usize;
-        assert!(index < self.base.len(), "Index of cursor is out of bounds");
-
-        let track = self.base[index].clone();
-
-        track
-    }
-
-    pub fn cursor_up(&mut self, count: u16) {
-        if self.cursor < count {
-            let rest = count - self.cursor;
-            self.y_offset = self.y_offset.saturating_sub(rest);
-        } else {
-            self.cursor -= count;
-        }
-    }
-
-    pub fn cursor_down(&mut self, count: u16) {
-        let total = self.base.len() as u16;
-
-        if self.cursor + (count as u16) < self.area.height
-            && self.y_offset + self.cursor + (count as u16) < self.list.len() as u16
-        {
-            self.cursor += count as u16;
-        } else if self.y_offset + self.area.height - 1 < total - 1 {
-            self.y_offset += 1;
-        }
-    }
-
     pub fn resize(&mut self, area: Rect) {
         self.area = area;
+    }
+
+    pub fn get_under_cursor(&self) -> model::Playlist {
+        let index = (self.cursor + self.y_offset) as usize;
+        self.list[index].clone()
     }
 }
 
@@ -93,51 +48,17 @@ impl Widget for &Playlist {
     {
         let w = area.width;
         let y = self.cursor + area.y;
+
         for x in 0..w {
             buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
         }
 
-        let current = self.current_track.as_ref();
-        let list = match current {
-            Some(current) => Text::from_iter(
-                self.base
-                    .iter()
-                    .skip(self.y_offset as usize)
-                    .enumerate()
-                    .map(|(i, t)| {
-                        let path = t.path.to_string_lossy();
-                        let name = path.split("/").last().unwrap().to_string();
-
-                        // NOTE: Idk what this is doing (i wrote it)
-                        // spend some time in future to understand
-                        let line = if current.path.to_string_lossy().contains(&name)
-                            && current.index - self.y_offset as usize == i
-                        {
-                            let color = if self.cursor + self.y_offset == current.index as u16 {
-                                Color::Yellow
-                            } else {
-                                Color::Blue
-                            };
-
-                            Line::raw(name).fg(color)
-                        } else {
-                            Line::raw(name)
-                        };
-
-                        line
-                    }),
-            ),
-            None => Text::from_iter(self.base.iter().skip(self.y_offset as usize).map(|t| {
-                Line::raw(
-                    t.path
-                        .to_string_lossy()
-                        .split("/")
-                        .last()
-                        .unwrap()
-                        .to_string(),
-                )
-            })),
-        };
+        let list = Text::from_iter(
+            self.list
+                .iter()
+                .skip(self.y_offset as usize)
+                .map(|t| Line::raw(&t.name)),
+        );
 
         list.render(area, buf);
     }

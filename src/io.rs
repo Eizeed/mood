@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     app::{Repeat, Shuffle},
     config::Config,
-    widget::playlist::Track,
+    model::Track,
 };
 
 pub fn get_config() -> Config {

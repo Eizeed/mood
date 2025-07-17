@@ -8,6 +8,8 @@ mod input;
 mod io;
 mod music;
 mod widget;
+mod screen;
+mod model;
 
 fn main() {
     let terminal = ratatui::init();

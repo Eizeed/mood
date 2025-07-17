@@ -4,6 +4,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
+#[derive(Debug)]
 pub struct Header {
     pub playlist_name: String,
     pub area: Rect,

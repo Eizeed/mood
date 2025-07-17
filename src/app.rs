@@ -26,8 +26,9 @@ use crate::{
     config::Config,
     input::spawn_input,
     io::{add_uuid_metadata, get_files},
+    model::{self, Track, playlist::DbTrack},
     music::{Command, Message, spawn_music},
-    widget::{Player, playlist::Track},
+    screen::player::{Focus, Player},
 };
 
 pub struct App {
@@ -40,6 +41,8 @@ pub struct App {
     should_exit: bool,
 
     player: Player,
+
+    tracks: Vec<Track>,
 
     start_timer: Instant,
     last_seek_timer: Instant,
@@ -87,7 +90,7 @@ impl App {
 
         conn.execute(
             r#"
-                CREATE TABLE IF NOT EXISTS playlists (
+                CREATE TABLE IF NOT EXISTS tracks (
                     uuid        TEXT PRIMARY KEY,
                     path        TEXT NOT NULL UNIQUE
                 );
@@ -96,8 +99,32 @@ impl App {
         )
         .unwrap();
 
+        conn.execute(
+            r#"
+                CREATE TABLE IF NOT EXISTS playlist (
+                    uuid        TEXT PRIMARY KEY,
+                    name        TEXT NOT NULL UNIQUE
+                );
+            "#,
+            (),
+        )
+        .unwrap();
+
+        conn.execute(
+            r#"
+                CREATE TABLE IF NOT EXISTS playlist_tracks (
+                    playlist_uuid        TEXT NOT NULL,
+                    track_uuid           TEXT NOT NULL,
+
+                    PRIMARY KEY (playlist_uuid, track_uuid)
+                );
+            "#,
+            (),
+        )
+        .unwrap();
+
         let uuids: Vec<Uuid> = {
-            let mut stmt = conn.prepare(" SELECT uuid, path FROM playlists;").unwrap();
+            let mut stmt = conn.prepare("SELECT uuid, path FROM tracks;").unwrap();
 
             stmt.query_map((), |row| row.get("uuid"))
                 .unwrap()
@@ -117,7 +144,24 @@ impl App {
                 .unwrap();
             });
 
-        let player = Player::new(tracks, area);
+        let playlists: Vec<model::Playlist> = {
+            let mut stmt = conn.prepare("SELECT uuid, name FROM playlists;").unwrap();
+
+            stmt.query_map((), |row| {
+                let uuid: Box<str> = row.get("uuid")?;
+                let uuid = Uuid::parse_str(&uuid).unwrap();
+
+                let name: String = row.get("name")?;
+
+                Ok(model::Playlist { uuid, name })
+            })
+            .unwrap()
+            .into_iter()
+            .map(|r| r.unwrap())
+            .collect()
+        };
+
+        let player = Player::new(tracks.clone(), playlists, area);
 
         App {
             paused: false,
@@ -127,6 +171,8 @@ impl App {
             shuffle: config.shuffle,
 
             should_exit: false,
+
+            tracks,
 
             player,
             start_timer: Instant::now(),
@@ -237,27 +283,54 @@ impl App {
                         self.player.push_front_manual_queue(track);
                     }
                     KeyCode::Enter => {
-                        let track = self.player.get_under_cursor();
+                        match self.player.focused_widget {
+                            Focus::Tracklist => {
+                                let track = self.player.get_under_cursor();
 
-                        match self.shuffle {
-                            Shuffle::Random => {
-                                self.player.playlist.list = self.player.playlist.base.clone();
+                                match self.shuffle {
+                                    Shuffle::Random => {
+                                        self.player.tracklist.list =
+                                            self.player.tracklist.base.clone();
 
-                                self.player.playlist.list.swap(track.index, 0);
-                                self.player.playlist.list[1..].shuffle(&mut rand::rng());
-                                self.player.set_auto_queue(0);
+                                        self.player.tracklist.list.swap(track.index, 0);
+                                        self.player.tracklist.list[1..].shuffle(&mut rand::rng());
+                                        self.player.set_auto_queue(0);
+                                    }
+                                    _ => {
+                                        let index = (self.player.tracklist.cursor
+                                            + self.player.tracklist.y_offset)
+                                            as usize;
+
+                                        self.player.set_auto_queue(index);
+                                    }
+                                };
+
+                                // TODO: Handle option
+                                let track = self.player.pop_auto_queue().unwrap();
+
+                                self.play(track);
                             }
-                            _ => {
-                                self.player.set_auto_queue(track.index);
+                            Focus::Playlist => {
+                                let playlist = self.player.playlist.get_under_cursor();
+                                let db_tracks =
+                                    DbTrack::get_by_playlist_uuid(&self.db_conn, playlist.uuid);
+
+                                let tracks =
+                                    Track::from_db_tracks(&self.player.tracklist.base, db_tracks);
+
+                                self.player.tracklist.base = tracks.clone();
+                                self.player.tracklist.list = tracks;
+                                self.player.tracklist.history.clear();
+                                self.player.tracklist.auto_queue.clear();
+
+                                self.player.switch_window();
                             }
-                        };
-
-                        // TODO: Handle option
-                        let track = self.player.pop_auto_queue().unwrap();
-
-                        self.play(track);
+                        }
                     }
                     KeyCode::Char(' ') => self.toggle_pause(),
+                    KeyCode::Char('p') => {
+                        self.player.switch_window();
+                    }
                     _ => {}
                 }
             }
@@ -394,7 +467,7 @@ impl App {
         let track = match self.player.get_prev() {
             Some(track) => track,
             None => {
-                self.player.playlist.history = self.player.playlist.list.clone();
+                self.player.tracklist.history = self.player.tracklist.list.clone();
 
                 let Some(track) = self.player.get_prev() else {
                     return;
