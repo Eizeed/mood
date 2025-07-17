@@ -1,4 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::Debug,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
 
 use lofty::{
     config::WriteOptions,
@@ -74,6 +78,43 @@ pub fn get_config() -> Config {
     }
 
     config
+}
+
+pub fn save_config(config: Config) {
+    let mut conf_dir = dirs::config_dir().expect("No config dir? :(");
+
+    conf_dir.push("mood");
+
+    std::fs::create_dir_all(&conf_dir).unwrap();
+
+    conf_dir.push("mood.conf");
+
+    let mut content = String::new();
+    std::fs::OpenOptions::new()
+        .read(true)
+        .open(&conf_dir)
+        .unwrap()
+        .read_to_string(&mut content)
+        .unwrap();
+
+    let mut config_str = format!(
+        "volume = {}\nshuffle = {}\nrepeat = {}\n",
+        config.volume, config.shuffle as u8, config.repeat as u8
+    );
+
+    for line in content.lines() {
+        if line.trim().starts_with("audio_path") {
+            config_str.push_str(&format!("{}\n", line));
+        }
+    }
+
+    let mut conf_file = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(conf_dir)
+        .unwrap();
+
+    conf_file.write_all(config_str.as_bytes()).unwrap();
 }
 
 pub fn get_files<T: AsRef<Path>>(path: T, extension: &str) -> Vec<PathBuf> {

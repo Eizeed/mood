@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::{
     config::Config,
     input::spawn_input,
-    io::{add_uuid_metadata, get_files},
+    io::{add_uuid_metadata, get_files, save_config},
     model::{self, Track, playlist::DbTrack},
     music::{Command, Message, spawn_music},
     screen::player::{Focus, Player},
@@ -228,6 +228,13 @@ impl App {
                 break;
             }
         }
+        save_config(Config {
+            volume: self.volume,
+            shuffle: self.shuffle,
+            repeat: self.repeat,
+            ..Default::default()
+        });
+
         stdout().execute(DisableMouseCapture).unwrap();
     }
 
@@ -249,9 +256,10 @@ impl App {
                                 let vol = 0.05;
                                 self.audio_tx.send(Command::volume_up(vol)).unwrap();
                             }
-                            KeyModifiers::NONE => {
-                                self.player.cursor_up(1);
-                            }
+                            KeyModifiers::NONE => match self.player.focused_widget {
+                                Focus::Tracklist => self.player.tracklist.cursor_up(1),
+                                Focus::Playlist => self.player.playlist.cursor_up(1),
+                            },
                             _ => (),
                         };
                     }
@@ -260,9 +268,10 @@ impl App {
                             KeyModifiers::CONTROL => {
                                 self.audio_tx.send(Command::volume_down(0.05)).unwrap();
                             }
-                            KeyModifiers::NONE => {
-                                self.player.cursor_down(1);
-                            }
+                            KeyModifiers::NONE => match self.player.focused_widget {
+                                Focus::Tracklist => self.player.tracklist.cursor_down(1),
+                                Focus::Playlist => self.player.playlist.cursor_down(1),
+                            },
                             _ => (),
                         };
                     }
@@ -285,25 +294,40 @@ impl App {
                     KeyCode::Enter => {
                         match self.player.focused_widget {
                             Focus::Tracklist => {
-                                let track = self.player.get_under_cursor();
+                                if let Some(selected_list) =
+                                    &self.player.tracklist.selected_playlist
+                                {
+                                    self.player.tracklist.base = selected_list.clone();
+                                } else {
+                                    self.player.tracklist.base = self.tracks.clone();
+                                };
 
-                                match self.shuffle {
+                                let index = match self.shuffle {
                                     Shuffle::Random => {
                                         self.player.tracklist.list =
                                             self.player.tracklist.base.clone();
 
-                                        self.player.tracklist.list.swap(track.index, 0);
-                                        self.player.tracklist.list[1..].shuffle(&mut rand::rng());
-                                        self.player.set_auto_queue(0);
-                                    }
-                                    _ => {
                                         let index = (self.player.tracklist.cursor
                                             + self.player.tracklist.y_offset)
                                             as usize;
 
-                                        self.player.set_auto_queue(index);
+                                        self.player.tracklist.list.swap(index, 0);
+                                        self.player.tracklist.list[1..].shuffle(&mut rand::rng());
+                                        0
+                                    }
+                                    _ => {
+                                        self.player.tracklist.list =
+                                            self.player.tracklist.base.clone();
+
+                                        let index = (self.player.tracklist.cursor
+                                            + self.player.tracklist.y_offset)
+                                            as usize;
+
+                                        index
                                     }
                                 };
+
+                                self.player.set_auto_queue(index);
 
                                 // TODO: Handle option
                                 let track = self.player.pop_auto_queue().unwrap();
@@ -315,13 +339,9 @@ impl App {
                                 let db_tracks =
                                     DbTrack::get_by_playlist_uuid(&self.db_conn, playlist.uuid);
 
-                                let tracks =
-                                    Track::from_db_tracks(&self.player.tracklist.base, db_tracks);
+                                let tracks = Track::from_db_tracks(&self.tracks, db_tracks);
 
-                                self.player.tracklist.base = tracks.clone();
-                                self.player.tracklist.list = tracks;
-                                self.player.tracklist.history.clear();
-                                self.player.tracklist.auto_queue.clear();
+                                self.player.tracklist.selected_playlist = Some(tracks);
 
                                 self.player.switch_window();
                             }

@@ -11,7 +11,6 @@ use crate::{
     widget::{ControlBar, Header, Playlist, Tracklist},
 };
 
-
 #[derive(Debug)]
 pub struct Player {
     pub header: Header,
@@ -20,7 +19,6 @@ pub struct Player {
     pub control_bar: ControlBar,
 
     // pub selected_playlist: Option<Vec<Track>>,
-
     pub from_auto: bool,
 
     pub focused_widget: Focus,

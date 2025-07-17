@@ -20,6 +20,7 @@ pub struct Tracklist {
     pub history: Vec<Track>,
 
     pub current_track: Option<Track>,
+    pub selected_playlist: Option<Vec<Track>>,
 
     pub cursor: u16,
     pub show_cursor: bool,
@@ -38,6 +39,7 @@ impl Tracklist {
             manual_queue: VecDeque::new(),
             history: Vec::new(),
             current_track: None,
+            selected_playlist: None,
             cursor: 0,
             show_cursor: true,
             y_offset: 0,
@@ -64,10 +66,14 @@ impl Tracklist {
     }
 
     pub fn cursor_down(&mut self, count: u16) {
-        let total = self.base.len() as u16;
+        let total = self
+            .selected_playlist
+            .as_ref()
+            .map(|p| p.len() as u16)
+            .unwrap_or(self.base.len() as u16);
 
         if self.cursor + (count as u16) < self.area.height
-            && self.y_offset + self.cursor + (count as u16) < self.list.len() as u16
+            && self.y_offset + self.cursor + (count as u16) < total
         {
             self.cursor += count as u16;
         } else if self.y_offset + self.area.height - 1 < total - 1 {
@@ -92,10 +98,11 @@ impl Widget for &Tracklist {
         }
 
         let current = self.current_track.as_ref();
+        let list: &Vec<Track> = self.selected_playlist.as_ref().unwrap_or(&self.base);
+
         let list = match current {
             Some(current) => Text::from_iter(
-                self.base
-                    .iter()
+                list.into_iter()
                     .skip(self.y_offset as usize)
                     .enumerate()
                     .map(|(i, t)| {
@@ -116,9 +123,6 @@ impl Widget for &Tracklist {
                                 Color::Blue
                             };
 
-                            eprintln!("OK {:?}", self.base[(self.cursor + self.y_offset) as usize]);
-                            eprintln!("CURRENT {:?}", current);
-
                             Line::raw(name).fg(color)
                         } else {
                             Line::raw(name)
@@ -127,7 +131,7 @@ impl Widget for &Tracklist {
                         line
                     }),
             ),
-            None => Text::from_iter(self.base.iter().skip(self.y_offset as usize).map(|t| {
+            None => Text::from_iter(list.into_iter().skip(self.y_offset as usize).map(|t| {
                 Line::raw(
                     t.path
                         .to_string_lossy()
