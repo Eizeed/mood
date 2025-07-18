@@ -400,6 +400,9 @@ impl App {
                         self.player.tracklist.base = self.tracks.clone();
                         self.player.tracklist.selected_playlist = None;
                     }
+                    KeyCode::Char('n') => {
+                        self.play_next();
+                    }
                     KeyCode::Char('d') => {
                         match &self.player.focused_widget {
                             Focus::Tracklist => {
