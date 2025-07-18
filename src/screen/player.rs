@@ -165,19 +165,15 @@ impl Player {
 
     pub fn cursor_up(&mut self, count: u16) {
         match self.focused_widget {
-            Focus::Tracklist => {
-                self.tracklist.cursor_up(count);
-            }
-            _ => {}
+            Focus::Tracklist => self.tracklist.cursor_up(count),
+            Focus::Playlist => self.playlist.cursor_up(count),
         }
     }
 
     pub fn cursor_down(&mut self, count: u16) {
         match self.focused_widget {
-            Focus::Tracklist => {
-                self.tracklist.cursor_down(count);
-            }
-            _ => {}
+            Focus::Tracklist => self.tracklist.cursor_down(count),
+            Focus::Playlist => self.playlist.cursor_down(count),
         }
     }
 

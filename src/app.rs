@@ -256,10 +256,9 @@ impl App {
                                 let vol = 0.05;
                                 self.audio_tx.send(Command::volume_up(vol)).unwrap();
                             }
-                            KeyModifiers::NONE => match self.player.focused_widget {
-                                Focus::Tracklist => self.player.tracklist.cursor_up(1),
-                                Focus::Playlist => self.player.playlist.cursor_up(1),
-                            },
+                            KeyModifiers::NONE => {
+                                self.player.cursor_up(1);
+                            }
                             _ => (),
                         };
                     }
@@ -268,10 +267,9 @@ impl App {
                             KeyModifiers::CONTROL => {
                                 self.audio_tx.send(Command::volume_down(0.05)).unwrap();
                             }
-                            KeyModifiers::NONE => match self.player.focused_widget {
-                                Focus::Tracklist => self.player.tracklist.cursor_down(1),
-                                Focus::Playlist => self.player.playlist.cursor_down(1),
-                            },
+                            KeyModifiers::NONE => {
+                                self.player.cursor_down(1);
+                            }
                             _ => (),
                         };
                     }
