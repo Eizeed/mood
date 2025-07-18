@@ -14,8 +14,11 @@ use crate::{
 #[derive(Debug)]
 pub struct Player {
     pub header: Header,
+
     pub tracklist: Tracklist,
     pub playlist: Playlist,
+    pub mode: Mode,
+
     pub control_bar: ControlBar,
 
     // pub selected_playlist: Option<Vec<Track>>,
@@ -32,6 +35,12 @@ pub enum Focus {
     Playlist,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Mode {
+    Default,
+    Select,
+}
+
 impl Player {
     pub fn new(tracklist: Vec<Track>, playlists: Vec<model::Playlist>, area: Rect) -> Self {
         let [header_area, playlist_area, control_area] = Layout::new(
@@ -46,8 +55,11 @@ impl Player {
 
         Player {
             header: Header::new("HEADER".to_string(), header_area),
+
             tracklist: Tracklist::new(tracklist, playlist_area),
             playlist: Playlist::new(playlists, playlist_area),
+            mode: Mode::Default,
+
             control_bar: ControlBar::new(control_area),
 
             from_auto: true,
@@ -56,6 +68,8 @@ impl Player {
             area,
         }
     }
+
+    pub fn dispatch_enter(&mut self) {}
 
     pub fn switch_window(&mut self) {
         match self.focused_widget {

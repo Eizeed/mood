@@ -28,7 +28,7 @@ use crate::{
     io::{add_uuid_metadata, get_files, save_config},
     model::{self, Track, playlist::DbTrack},
     music::{Command, Message, spawn_music},
-    screen::player::{Focus, Player},
+    screen::player::{Focus, Mode, Player},
 };
 
 pub struct App {
@@ -289,65 +289,143 @@ impl App {
                         let track = self.player.get_under_cursor();
                         self.player.push_front_manual_queue(track);
                     }
+                    KeyCode::Char('a') => match self.player.focused_widget {
+                        Focus::Tracklist => {
+                            let track = self.player.get_under_cursor();
+                            self.player.playlist.selected_track = Some(track);
+                            self.player.mode = Mode::Select;
+                            self.player.switch_window();
+                        }
+                        Focus::Playlist => {}
+                    },
                     KeyCode::Enter => {
                         match self.player.focused_widget {
                             Focus::Tracklist => {
-                                if let Some(selected_list) =
-                                    &self.player.tracklist.selected_playlist
-                                {
-                                    self.player.tracklist.base = selected_list.clone();
-                                } else {
-                                    self.player.tracklist.base = self.tracks.clone();
-                                };
+                                match self.player.mode {
+                                    Mode::Default => {
+                                        if let Some((_, selected_list)) =
+                                            &self.player.tracklist.selected_playlist
+                                        {
+                                            self.player.tracklist.base = selected_list.clone();
+                                        } else {
+                                            self.player.tracklist.base = self.tracks.clone();
+                                        };
 
-                                let index = match self.shuffle {
-                                    Shuffle::Random => {
-                                        self.player.tracklist.list =
-                                            self.player.tracklist.base.clone();
+                                        let index = match self.shuffle {
+                                            Shuffle::Random => {
+                                                self.player.tracklist.list =
+                                                    self.player.tracklist.base.clone();
 
-                                        let index = (self.player.tracklist.cursor
-                                            + self.player.tracklist.y_offset)
-                                            as usize;
+                                                let index = (self.player.tracklist.cursor
+                                                    + self.player.tracklist.y_offset)
+                                                    as usize;
 
-                                        self.player.tracklist.list.swap(index, 0);
-                                        self.player.tracklist.list[1..].shuffle(&mut rand::rng());
-                                        0
+                                                self.player.tracklist.list.swap(index, 0);
+                                                self.player.tracklist.list[1..]
+                                                    .shuffle(&mut rand::rng());
+
+                                                0
+                                            }
+                                            _ => {
+                                                self.player.tracklist.list =
+                                                    self.player.tracklist.base.clone();
+
+                                                let index = (self.player.tracklist.cursor
+                                                    + self.player.tracklist.y_offset)
+                                                    as usize;
+
+                                                index
+                                            }
+                                        };
+
+                                        self.player.set_auto_queue(index);
+
+                                        // TODO: Handle option
+                                        let track = self.player.pop_auto_queue().unwrap();
+
+                                        self.play(track);
                                     }
-                                    _ => {
-                                        self.player.tracklist.list =
-                                            self.player.tracklist.base.clone();
+                                    Mode::Select => {}
+                                }
+                            }
+                            Focus::Playlist => match self.player.mode {
+                                Mode::Default => {
+                                    let playlist = self.player.playlist.get_under_cursor();
+                                    let db_tracks =
+                                        DbTrack::get_by_playlist_uuid(&self.db_conn, playlist.uuid);
 
-                                        let index = (self.player.tracklist.cursor
-                                            + self.player.tracklist.y_offset)
-                                            as usize;
+                                    let tracks = Track::from_db_tracks(&self.tracks, db_tracks);
 
-                                        index
+                                    self.player.tracklist.selected_playlist =
+                                        Some((playlist, tracks));
+
+                                    self.player.switch_window();
+                                    self.player.tracklist.y_offset = 0;
+                                    self.player.tracklist.cursor = 0;
+                                }
+                                Mode::Select => {
+                                    let playlist = self.player.playlist.get_under_cursor();
+                                    let db_tracks =
+                                        DbTrack::get_by_playlist_uuid(&self.db_conn, playlist.uuid);
+
+                                    let tracks = Track::from_db_tracks(&self.tracks, db_tracks);
+
+                                    let selected_track =
+                                        self.player.playlist.selected_track.take().unwrap();
+
+                                    if tracks
+                                        .iter()
+                                        .find(|t| t.uuid == selected_track.uuid)
+                                        .is_some()
+                                    {
+                                        self.player.mode = Mode::Default;
+                                        self.player.switch_window();
+                                        return;
                                     }
-                                };
 
-                                self.player.set_auto_queue(index);
+                                    selected_track
+                                        .insert_into_playlist(playlist.uuid, &self.db_conn);
 
-                                // TODO: Handle option
-                                let track = self.player.pop_auto_queue().unwrap();
-
-                                self.play(track);
-                            }
-                            Focus::Playlist => {
-                                let playlist = self.player.playlist.get_under_cursor();
-                                let db_tracks =
-                                    DbTrack::get_by_playlist_uuid(&self.db_conn, playlist.uuid);
-
-                                let tracks = Track::from_db_tracks(&self.tracks, db_tracks);
-
-                                self.player.tracklist.selected_playlist = Some(tracks);
-
-                                self.player.switch_window();
-                            }
+                                    self.player.mode = Mode::Default;
+                                    self.player.switch_window();
+                                }
+                            },
                         }
                     }
                     KeyCode::Char(' ') => self.toggle_pause(),
                     KeyCode::Char('p') => {
                         self.player.switch_window();
+                    }
+                    KeyCode::Char('e') => {
+                        self.player.tracklist.base = self.tracks.clone();
+                        self.player.tracklist.selected_playlist = None;
+                    }
+                    KeyCode::Char('d') => {
+                        match &self.player.focused_widget {
+                            Focus::Tracklist => {
+                                match &self.player.tracklist.selected_playlist {
+                                    // WTF is that bro
+                                    Some((playlist, _)) => {
+                                        let track = self.player.get_under_cursor();
+                                        track.delete_from_playliost(playlist.uuid, &self.db_conn);
+                                        let db_tracks = DbTrack::get_by_playlist_uuid(
+                                            &self.db_conn,
+                                            playlist.uuid,
+                                        );
+                                        let tracks = Track::from_db_tracks(&self.tracks, db_tracks);
+
+                                        self.player
+                                            .tracklist
+                                            .selected_playlist
+                                            .as_mut()
+                                            .unwrap()
+                                            .1 = tracks;
+                                    }
+                                    None => {}
+                                }
+                            }
+                            Focus::Playlist => {}
+                        }
                     }
                     _ => {}
                 }

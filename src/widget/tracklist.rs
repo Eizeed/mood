@@ -8,7 +8,7 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::model::Track;
+use crate::model::{self, Track};
 
 #[derive(Debug)]
 pub struct Tracklist {
@@ -20,7 +20,8 @@ pub struct Tracklist {
     pub history: Vec<Track>,
 
     pub current_track: Option<Track>,
-    pub selected_playlist: Option<Vec<Track>>,
+
+    pub selected_playlist: Option<(model::Playlist, Vec<Track>)>,
 
     pub cursor: u16,
     pub show_cursor: bool,
@@ -49,11 +50,19 @@ impl Tracklist {
 
     pub fn get_under_cursor(&self) -> Track {
         let index = (self.cursor + self.y_offset) as usize;
-        assert!(index < self.base.len(), "Index of cursor is out of bounds");
 
-        let track = self.base[index].clone();
+        match &self.selected_playlist {
+            Some((_, tracks)) => {
+                assert!(index < tracks.len(), "Index of cursor is out of bounds");
 
-        track
+                tracks[index].clone()
+            },
+             None => {
+                assert!(index < self.base.len(), "Index of cursor is out of bounds");
+
+                self.base[index].clone()
+             }
+        }
     }
 
     pub fn cursor_up(&mut self, count: u16) {
@@ -69,7 +78,7 @@ impl Tracklist {
         let total = self
             .selected_playlist
             .as_ref()
-            .map(|p| p.len() as u16)
+            .map(|(_, tracks)| tracks.len() as u16)
             .unwrap_or(self.base.len() as u16);
 
         if self.cursor + (count as u16) < self.area.height
@@ -98,7 +107,11 @@ impl Widget for &Tracklist {
         }
 
         let current = self.current_track.as_ref();
-        let list: &Vec<Track> = self.selected_playlist.as_ref().unwrap_or(&self.base);
+        let list: &[Track] = self
+            .selected_playlist
+            .as_ref()
+            .map(|(_, tracks)| &**tracks) // LOL
+            .unwrap_or(&*self.base);
 
         let list = match current {
             Some(current) => Text::from_iter(

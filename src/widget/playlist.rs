@@ -6,11 +6,13 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::model;
+use crate::model::{self, Track};
 
 #[derive(Debug)]
 pub struct Playlist {
     pub list: Vec<model::Playlist>,
+
+    pub selected_track: Option<Track>,
 
     pub cursor: u16,
     pub show_cursor: bool,
@@ -24,6 +26,7 @@ impl Playlist {
     pub fn new(playlists: Vec<model::Playlist>, area: Rect) -> Self {
         Playlist {
             list: playlists,
+            selected_track: None,
             cursor: 0,
             show_cursor: true,
             y_offset: 0,

@@ -1,5 +1,4 @@
 use std::{
-    fmt::Debug,
     io::{Read, Write},
     path::{Path, PathBuf},
 };

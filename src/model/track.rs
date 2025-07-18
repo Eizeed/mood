@@ -1,5 +1,6 @@
 use std::{path::PathBuf, time::Duration};
 
+use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::model::playlist::DbTrack;
@@ -24,5 +25,29 @@ impl Track {
             converted.push(track.clone());
         }
         converted
+    }
+
+    pub fn insert_into_playlist(self, playlist_uuid: Uuid, conn: &Connection) {
+        conn.execute(
+            r#"
+                INSERT INTO track_playlist
+                (track_uuid, playlist_uuid)
+                VALUES
+                (?1, ?2);
+            "#,
+            [self.uuid.to_string(), playlist_uuid.to_string()],
+        )
+        .unwrap();
+    }
+
+    pub fn delete_from_playliost(self, playlist_uuid: Uuid, conn: &Connection) {
+        conn.execute(
+            r#"
+                DELETE FROM track_playlist
+                WHERE track_uuid = ?1 AND playlist_uuid = ?2;
+            "#,
+            [self.uuid.to_string(), playlist_uuid.to_string()],
+        )
+        .unwrap();
     }
 }
