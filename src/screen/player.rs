@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, rc::Rc};
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -42,7 +42,7 @@ pub enum Mode {
 }
 
 impl Player {
-    pub fn new(tracklist: Vec<Track>, playlists: Vec<model::Playlist>, area: Rect) -> Self {
+    pub fn new(tracklist: Rc<[Track]>, playlists: Vec<model::Playlist>, area: Rect) -> Self {
         let [header_area, playlist_area, control_area] = Layout::new(
             Direction::Vertical,
             [

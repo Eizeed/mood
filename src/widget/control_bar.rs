@@ -173,7 +173,6 @@ impl StatefulWidget for &ControlBar {
             )
             .areas(button_area);
 
-            // This section looks really really REALLY bad. But it works!
             let control = match state.repeat {
                 Repeat::None | Repeat::Queue => "[s] [<] [\u{23F8}] [>] [r]",
                 Repeat::One => "[s] [<] [\u{23F8}] [>] [R]",

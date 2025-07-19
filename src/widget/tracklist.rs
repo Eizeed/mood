@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, rc::Rc};
 
 use ratatui::{
     buffer::Buffer,
@@ -12,7 +12,7 @@ use crate::model::{self, Track};
 
 #[derive(Debug)]
 pub struct Tracklist {
-    pub base: Vec<Track>,
+    pub base: Rc<[Track]>,
 
     pub list: Vec<Track>,
     pub auto_queue: VecDeque<Track>,
@@ -32,10 +32,10 @@ pub struct Tracklist {
 }
 
 impl Tracklist {
-    pub fn new(paths: Vec<Track>, area: Rect) -> Self {
+    pub fn new(paths: Rc<[Track]>, area: Rect) -> Self {
         Tracklist {
             base: paths.clone(),
-            list: paths,
+            list: paths.to_vec(),
             auto_queue: VecDeque::new(),
             manual_queue: VecDeque::new(),
             history: Vec::new(),
@@ -56,12 +56,12 @@ impl Tracklist {
                 assert!(index < tracks.len(), "Index of cursor is out of bounds");
 
                 tracks[index].clone()
-            },
-             None => {
+            }
+            None => {
                 assert!(index < self.base.len(), "Index of cursor is out of bounds");
 
                 self.base[index].clone()
-             }
+            }
         }
     }
 
