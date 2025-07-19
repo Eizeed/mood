@@ -9,6 +9,45 @@ pub struct Playlist {
     pub name: String,
 }
 
+impl Playlist {
+    pub fn get_all(conn: &Connection) -> Vec<Playlist> {
+        let mut stmt = conn.prepare("SELECT uuid, name FROM playlists;").unwrap();
+
+        stmt.query_map((), |row| {
+            let uuid: Box<str> = row.get("uuid")?;
+            let uuid = Uuid::parse_str(&uuid).unwrap();
+
+            let name: String = row.get("name")?;
+
+            Ok(Playlist { uuid, name })
+        })
+        .unwrap()
+        .into_iter()
+        .map(|r| r.unwrap())
+        .collect()
+    }
+
+    pub fn delete(self, conn: &mut Connection) {
+        let tx = conn.transaction().unwrap();
+        tx.execute(
+            r#"
+                DELETE FROM playlist_tracks WHERE playlist_uuid = ?1
+            "#,
+            [self.uuid.to_string()],
+        )
+        .unwrap();
+        tx.execute(
+            r#"
+                DELETE FROM playlists WHERE uuid = ?1
+            "#,
+            [self.uuid.to_string()],
+        )
+        .unwrap();
+
+        tx.commit().unwrap();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DbTrack {
     pub track_uuid: Uuid,
@@ -23,8 +62,8 @@ impl DbTrack {
                     tracks.uuid AS track_uuid,
                     tracks.path AS track_path
                 FROM playlists
-                LEFT JOIN track_playlist ON playlists.uuid = track_playlist.playlist_uuid
-                LEFT JOIN tracks ON tracks.uuid = track_playlist.track_uuid
+                LEFT JOIN playlist_tracks ON playlists.uuid = playlist_tracks.playlist_uuid
+                LEFT JOIN tracks ON tracks.uuid = playlist_tracks.track_uuid
                 WHERE playlists.uuid = ?1;
             "#,
         )

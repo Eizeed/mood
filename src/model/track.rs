@@ -30,7 +30,7 @@ impl Track {
     pub fn insert_into_playlist(self, playlist_uuid: Uuid, conn: &Connection) {
         conn.execute(
             r#"
-                INSERT INTO track_playlist
+                INSERT INTO playlist_tracks
                 (track_uuid, playlist_uuid)
                 VALUES
                 (?1, ?2);
@@ -43,7 +43,7 @@ impl Track {
     pub fn delete_from_playliost(self, playlist_uuid: Uuid, conn: &Connection) {
         conn.execute(
             r#"
-                DELETE FROM track_playlist
+                DELETE FROM playlist_tracks
                 WHERE track_uuid = ?1 AND playlist_uuid = ?2;
             "#,
             [self.uuid.to_string(), playlist_uuid.to_string()],

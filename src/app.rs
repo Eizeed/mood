@@ -145,22 +145,7 @@ impl App {
                 .unwrap();
             });
 
-        let playlists: Vec<model::Playlist> = {
-            let mut stmt = conn.prepare("SELECT uuid, name FROM playlists;").unwrap();
-
-            stmt.query_map((), |row| {
-                let uuid: Box<str> = row.get("uuid")?;
-                let uuid = Uuid::parse_str(&uuid).unwrap();
-
-                let name: String = row.get("name")?;
-
-                Ok(model::Playlist { uuid, name })
-            })
-            .unwrap()
-            .into_iter()
-            .map(|r| r.unwrap())
-            .collect()
-        };
+        let playlists = model::Playlist::get_all(&conn);
 
         let player = Player::new(tracks.clone(), playlists, area);
 
@@ -421,7 +406,16 @@ impl App {
                                     None => {}
                                 }
                             }
-                            Focus::Playlist => {}
+                            Focus::Playlist => {
+                                let playlist = self.player.playlist.get_under_cursor();
+
+                                playlist.delete(&mut self.db_conn);
+
+                                let playlists = model::Playlist::get_all(&self.db_conn);
+                                self.player.playlist.list = playlists;
+                                self.player.playlist.cursor = 0;
+                                self.player.playlist.y_offset = 0;
+                            }
                         }
                     }
                     _ => {}
