@@ -3,6 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::{
+    app::{Repeat, Shuffle},
+    config::Config,
+};
 use lofty::{
     config::WriteOptions,
     file::{AudioFile, TaggedFileExt},
@@ -11,11 +15,34 @@ use lofty::{
 };
 use uuid::Uuid;
 
-use crate::{
-    app::{Repeat, Shuffle},
-    config::Config,
-    model::Track,
-};
+use crate::model::track::Track;
+
+pub fn get_files<T: AsRef<Path>>(path: T, extension: &str) -> Vec<PathBuf> {
+    let root = path.as_ref().to_path_buf();
+
+    let mut files = vec![];
+    let mut stack = vec![root];
+
+    while let Some(dir) = stack.pop() {
+        for entry in dir.read_dir().unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                match path.extension() {
+                    Some(ext) => {
+                        if ext == extension {
+                            files.push(path);
+                        }
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+
+    files
+}
 
 pub fn get_config() -> Config {
     let mut config = Config::default();
@@ -116,33 +143,6 @@ pub fn save_config(config: Config) {
     conf_file.write_all(config_str.as_bytes()).unwrap();
 }
 
-pub fn get_files<T: AsRef<Path>>(path: T, extension: &str) -> Vec<PathBuf> {
-    let root = path.as_ref().to_path_buf();
-
-    let mut files = vec![];
-    let mut stack = vec![root];
-
-    while let Some(dir) = stack.pop() {
-        for entry in dir.read_dir().unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                stack.push(path);
-            } else {
-                match path.extension() {
-                    Some(ext) => {
-                        if ext == extension {
-                            files.push(path);
-                        }
-                    }
-                    None => {}
-                }
-            }
-        }
-    }
-
-    files
-}
-
 // Maybe this is bad, idk...
 pub fn add_uuid_metadata<T>(paths: Vec<T>) -> Vec<Track>
 where
@@ -150,8 +150,7 @@ where
 {
     paths
         .into_iter()
-        .enumerate()
-        .map(|(index, p)| {
+        .map(|p| {
             let p = p.into();
 
             let mut tagged = read_from_path(&p).unwrap();
@@ -166,7 +165,6 @@ where
                         if let ItemValue::Text(uuid) = val {
                             if let Ok(uuid) = Uuid::parse_str(uuid) {
                                 return Track {
-                                    index,
                                     uuid,
                                     duration,
                                     path: p,
@@ -193,7 +191,6 @@ where
 
             tagged.save_to_path(&p, WriteOptions::default()).unwrap();
             Track {
-                index,
                 uuid,
                 duration,
                 path: p,

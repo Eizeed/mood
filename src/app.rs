@@ -1,82 +1,140 @@
 use std::{
+    collections::VecDeque,
     io::{BufReader, stdout},
     rc::Rc,
     time::{Duration, Instant},
 };
 
 use crossbeam_channel::{Receiver, Sender};
-
-use rand::seq::SliceRandom;
 use ratatui::{
     Terminal,
+    buffer::Buffer,
     crossterm::{
         ExecutableCommand,
         event::{
             DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
-            MouseButton, MouseEventKind,
         },
     },
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     prelude::Backend,
-    widgets::{StatefulWidget, Widget},
+    widgets::Widget,
 };
 use rusqlite::Connection;
-use uuid::Uuid;
 
 use crate::{
     config::Config,
     input::spawn_input,
-    io::{add_uuid_metadata, get_files, save_config},
-    model::{self, Track, playlist::DbTrack},
-    music::{Command, Message, spawn_music},
-    screen::player::{Focus, Mode, Player},
+    io::{add_uuid_metadata, get_config, get_files, save_config},
+    model::{self, PlaylistMd, track::Track},
+    music::{self, Command, spawn_music},
+    widget::{
+        control_bar::{self, ControlBar},
+        header::Header,
+        playlist::{self, Playlist},
+        tracklist::{self, Tracklist},
+    },
 };
 
-pub struct App {
+pub struct Player {
+    header: Header,
+    tracklist: Tracklist,
+    playlist: Playlist,
+    control_bar: ControlBar,
+
+    focused_widget: Focus,
+    mode: Mode,
+
     paused: bool,
-    progress: f32,
+    // progress: f32,
     volume: f32,
     repeat: Repeat,
     shuffle: Shuffle,
-
     should_exit: bool,
 
-    player: Player,
-
-    tracks: Rc<[Track]>,
-
-    start_timer: Instant,
+    // tracks: Rc<[Track]>,
     last_seek_timer: Instant,
 
+    // debug_timer: Instant,
     audio_tx: Sender<Command>,
-    audio_rx: Receiver<Message>,
-
+    audio_rx: Receiver<music::Message>,
     input_rx: Receiver<Event>,
 
     db_conn: Connection,
+    // area: Rect,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
+pub enum Instruction {
+    Tracklist(tracklist::Instruction),
+    Playlist(playlist::Instruction),
+    ControlBar(control_bar::Instruction),
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Tracklist(tracklist::Message),
+    Playlist(playlist::Message),
+    ControlBar(control_bar::Message),
+
+    SeekForward(Duration),
+    SeekBackward(Duration),
+
+    VolumeUp(f32),
+    VolumeDown(f32),
+
+    ToggleShufle,
+    ToggleRepeat,
+
+    SetBaseQueue,
+    Pause,
+    SkipToNext,
+    SkipToPrev,
+
+    SetProgress(f32),
+    SetVolume(f32),
+    PlayNext,
+
+    Resize(Rect),
+
+    Exit,
+
+    Batch(Vec<Option<Message>>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Shuffle {
+    None,
+    Random,
+}
+
+#[derive(Debug, Clone)]
 pub enum Repeat {
     None,
     Queue,
     One,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Shuffle {
-    None,
-    Random,
+#[derive(Debug, Clone)]
+pub enum Focus {
+    Tracklist,
+    Playlist,
 }
 
-impl App {
-    pub fn new(config: Config, area: Rect) -> Self {
-        let conn = Connection::open(config.database_path).unwrap();
+#[derive(Debug, Clone)]
+pub enum Mode {
+    Default,
+    Write,
+}
 
+impl Player {
+    pub fn new(area: Rect) -> Self {
+        let config = get_config();
         let (main_audio_tx, main_audio_rx) = crossbeam_channel::bounded::<Command>(64);
-        let (audio_main_tx, audio_main_rx) = crossbeam_channel::bounded::<Message>(64);
+        let (audio_main_tx, audio_main_rx) = crossbeam_channel::bounded::<music::Message>(64);
 
         let (input_main_tx, input_main_rx) = crossbeam_channel::bounded::<Event>(64);
+
+        let conn = Connection::open(config.database_path).unwrap();
 
         spawn_music(main_audio_rx, audio_main_tx);
         spawn_input(input_main_tx);
@@ -89,79 +147,36 @@ impl App {
 
         let tracks: Rc<[Track]> = add_uuid_metadata(paths).into();
 
-        conn.execute(
-            r#"
-                CREATE TABLE IF NOT EXISTS tracks (
-                    uuid        TEXT PRIMARY KEY,
-                    path        TEXT NOT NULL UNIQUE
-                );
-            "#,
-            (),
+        let [header_area, playlist_area, control_area] = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Length(2),
+                Constraint::Fill(1),
+                Constraint::Length(4),
+            ],
         )
-        .unwrap();
+        .areas(area);
 
-        conn.execute(
-            r#"
-                CREATE TABLE IF NOT EXISTS playlist (
-                    uuid        TEXT PRIMARY KEY,
-                    name        TEXT NOT NULL UNIQUE
-                );
-            "#,
-            (),
-        )
-        .unwrap();
+        let shuffle = config.shuffle;
+        let repeat = config.repeat;
 
-        conn.execute(
-            r#"
-                CREATE TABLE IF NOT EXISTS playlist_tracks (
-                    playlist_uuid        TEXT NOT NULL,
-                    track_uuid           TEXT NOT NULL,
+        Player {
+            header: Header::new("LOL NO PLAYLIST".to_string(), header_area),
+            playlist: Playlist::new(&conn, playlist_area),
+            tracklist: Tracklist::new(tracks, playlist_area, shuffle.clone(), repeat.clone()),
+            control_bar: ControlBar::new(control_area, 0.0, shuffle.clone(), repeat.clone()),
 
-                    PRIMARY KEY (playlist_uuid, track_uuid)
-                );
-            "#,
-            (),
-        )
-        .unwrap();
+            focused_widget: Focus::Tracklist,
+            mode: Mode::Default,
 
-        let uuids: Vec<Uuid> = {
-            let mut stmt = conn.prepare("SELECT uuid, path FROM tracks;").unwrap();
-
-            stmt.query_map((), |row| row.get("uuid"))
-                .unwrap()
-                .map(|r: Result<Box<str>, _>| Uuid::parse_str(&r.unwrap()).unwrap())
-                .collect()
-        };
-
-        tracks
-            .iter()
-            .filter(|track| uuids.iter().find(|uuid| **uuid == track.uuid).is_none())
-            .for_each(|t| {
-                eprintln!("Added track to database: {:?}", t.path.file_name().unwrap());
-                conn.execute(
-                    "INSERT INTO playlists (uuid, path) VALUES (?1, ?2)",
-                    (t.uuid.to_string(), t.path.to_string_lossy()),
-                )
-                .unwrap();
-            });
-
-        let playlists = model::Playlist::get_all(&conn);
-
-        let player = Player::new(tracks.clone(), playlists, area);
-
-        App {
-            paused: false,
-            progress: 0.0,
             volume: config.volume,
-            repeat: config.repeat,
-            shuffle: config.shuffle,
+            paused: false,
+            shuffle,
+            repeat,
 
             should_exit: false,
 
-            tracks: tracks.into(),
-
-            player,
-            start_timer: Instant::now(),
+            // tracks: tracks.into(),
             last_seek_timer: Instant::now(),
 
             audio_tx: main_audio_tx,
@@ -169,16 +184,6 @@ impl App {
             input_rx: input_main_rx,
 
             db_conn: conn,
-        }
-    }
-
-    pub fn context(&self) -> Context {
-        Context {
-            paused: self.paused,
-            volume: self.volume,
-            repeat: self.repeat,
-            shuffle: self.shuffle,
-            progress: self.progress,
         }
     }
 
@@ -190,25 +195,32 @@ impl App {
                 .draw(|f| self.render(f.area(), f.buffer_mut()))
                 .expect("failed to draw frame");
 
-            loop {
-                crossbeam_channel::select_biased! {
-                    recv(self.input_rx) -> event => {
-                        self.handle_event(event.unwrap());
-                        break;
+            crossbeam_channel::select_biased! {
+                recv(self.input_rx) -> event => {
+                    let event = event.unwrap();
+                    let mut curr_message = self.handle_event(event);
+
+                    while let Some(message) = curr_message {
+                        curr_message = self.update(message);
+                    };
+                }
+                recv(self.audio_rx) -> msg => {
+                    let msg = msg.unwrap();
+                    let mut curr_message = self.handle_audio(msg);
+
+                    while let Some(message) = curr_message {
+                        curr_message = self.update(message);
+                    };
+
+                    for msg in self.audio_rx.clone().try_iter() {
+                        let mut curr_message = self.handle_audio(msg);
+
+                        while let Some(message) = curr_message {
+                            curr_message = self.update(message);
+                        };
                     }
-                    recv(self.audio_rx) -> msg => {
-                        let msg = msg.unwrap();
-
-                        self.handle_audio_rx(msg);
-
-                        for msg in self.audio_rx.clone().try_iter() {
-                            self.handle_audio_rx(msg)
-                        }
-
-                        break;
-                    }
-                };
-            }
+                }
+            };
 
             if self.should_exit {
                 break;
@@ -225,373 +237,413 @@ impl App {
         stdout().execute(DisableMouseCapture).unwrap();
     }
 
-    pub fn handle_event(&mut self, ev: Event) {
-        match ev {
-            Event::Key(k) => {
-                let keycode = k.code;
-                let modifiers = k.modifiers;
+    fn handle_event(&self, ev: Event) -> Option<Message> {
+        let message = match ev {
+            Event::Key(c) => {
+                if c.kind != KeyEventKind::Press {
+                    return None;
+                }
 
-                if KeyEventKind::Release == k.kind {
-                    return;
-                };
-
-                match keycode {
-                    KeyCode::Esc => self.should_exit = true,
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        match modifiers {
-                            KeyModifiers::CONTROL => {
-                                let vol = 0.05;
-                                self.audio_tx.send(Command::volume_up(vol)).unwrap();
-                            }
-                            KeyModifiers::NONE => {
-                                self.player.cursor_up(1);
-                            }
-                            _ => (),
-                        };
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        match modifiers {
-                            KeyModifiers::CONTROL => {
-                                self.audio_tx.send(Command::volume_down(0.05)).unwrap();
-                            }
-                            KeyModifiers::NONE => {
-                                self.player.cursor_down(1);
-                            }
-                            _ => (),
-                        };
-                    }
-                    KeyCode::Char('h') => match modifiers {
-                        KeyModifiers::CONTROL => {
-                            self.seek_backward(Duration::from_secs(5));
-                        }
-                        _ => {}
-                    },
-                    KeyCode::Char('l') => match modifiers {
-                        KeyModifiers::CONTROL => {
-                            self.seek_forward(Duration::from_secs(5));
-                        }
-                        _ => {}
-                    },
-                    KeyCode::Char('q') => {
-                        let track = self.player.get_under_cursor();
-                        self.player.push_front_manual_queue(track);
-                    }
-                    KeyCode::Char('a') => match self.player.focused_widget {
-                        Focus::Tracklist => {
-                            let track = self.player.get_under_cursor();
-                            self.player.playlist.selected_track = Some(track);
-                            self.player.mode = Mode::Select;
-                            self.player.switch_window();
-                        }
-                        Focus::Playlist => {}
-                    },
-                    KeyCode::Enter => match self.player.focused_widget {
-                        Focus::Tracklist => match self.player.mode {
-                            Mode::Default => {
-                                if let Some((_, selected_list)) =
-                                    &self.player.tracklist.selected_playlist
-                                {
-                                    self.player.tracklist.base = selected_list.clone().into();
-                                } else {
-                                    self.player.tracklist.base = self.tracks.clone();
-                                };
-
-                                let index = match self.shuffle {
-                                    Shuffle::Random => {
-                                        self.player.tracklist.list =
-                                            self.player.tracklist.base.to_vec();
-
-                                        let index = (self.player.tracklist.cursor
-                                            + self.player.tracklist.y_offset)
-                                            as usize;
-
-                                        self.player.tracklist.list.swap(index, 0);
-                                        self.player.tracklist.list[1..].shuffle(&mut rand::rng());
-
-                                        0
-                                    }
-                                    _ => {
-                                        self.player.tracklist.list =
-                                            self.player.tracklist.base.to_vec();
-
-                                        let index = (self.player.tracklist.cursor
-                                            + self.player.tracklist.y_offset)
-                                            as usize;
-
-                                        index
-                                    }
-                                };
-
-                                self.player.set_auto_queue(index);
-
-                                let track = self.player.pop_auto_queue().unwrap();
-
-                                self.play(track);
-                            }
-                            Mode::Select => {}
-                        },
-                        Focus::Playlist => match self.player.mode {
-                            Mode::Default => {
-                                let playlist = self.player.playlist.get_under_cursor();
-                                let db_tracks =
-                                    DbTrack::get_by_playlist_uuid(&self.db_conn, playlist.uuid);
-
-                                let tracks = Track::from_db_tracks(&self.tracks, db_tracks);
-
-                                self.player.tracklist.selected_playlist = Some((playlist, tracks));
-
-                                self.player.switch_window();
-                                self.player.tracklist.y_offset = 0;
-                                self.player.tracklist.cursor = 0;
-                            }
-                            Mode::Select => {
-                                let playlist = self.player.playlist.get_under_cursor();
-                                let db_tracks =
-                                    DbTrack::get_by_playlist_uuid(&self.db_conn, playlist.uuid);
-
-                                let tracks = Track::from_db_tracks(&self.tracks, db_tracks);
-
-                                let selected_track =
-                                    self.player.playlist.selected_track.take().unwrap();
-
-                                if tracks
-                                    .iter()
-                                    .find(|t| t.uuid == selected_track.uuid)
-                                    .is_some()
-                                {
-                                    self.player.mode = Mode::Default;
-                                    self.player.switch_window();
-                                    return;
+                match self.mode {
+                    Mode::Default => {
+                        let msg = match c.code {
+                            KeyCode::Esc => Some(Message::Exit),
+                            KeyCode::Char('j') => match c.modifiers {
+                                KeyModifiers::CONTROL => Some(Message::VolumeDown(0.05)),
+                                _ => None,
+                            },
+                            KeyCode::Char('k') => match c.modifiers {
+                                KeyModifiers::CONTROL => Some(Message::VolumeUp(0.05)),
+                                _ => None,
+                            },
+                            KeyCode::Char('h') => match c.modifiers {
+                                KeyModifiers::CONTROL => Some(Message::SkipToPrev),
+                                KeyModifiers::NONE => {
+                                    Some(Message::SeekBackward(Duration::from_secs(5)))
                                 }
-
-                                selected_track.insert_into_playlist(playlist.uuid, &self.db_conn);
-
-                                self.player.mode = Mode::Default;
-                                self.player.switch_window();
-                            }
-                        },
-                    },
-                    KeyCode::Char(' ') => self.toggle_pause(),
-                    KeyCode::Char('p') => {
-                        self.player.switch_window();
-                    }
-                    KeyCode::Char('e') => {
-                        self.player.tracklist.base = self.tracks.clone();
-                        self.player.tracklist.selected_playlist = None;
-                    }
-                    KeyCode::Char('n') => {
-                        self.play_next();
-                    }
-                    KeyCode::Char('d') => {
-                        match &self.player.focused_widget {
-                            Focus::Tracklist => {
-                                match &self.player.tracklist.selected_playlist {
-                                    // WTF is that bro
-                                    Some((playlist, _)) => {
-                                        let track = self.player.get_under_cursor();
-                                        track.delete_from_playliost(playlist.uuid, &self.db_conn);
-                                        let db_tracks = DbTrack::get_by_playlist_uuid(
-                                            &self.db_conn,
-                                            playlist.uuid,
-                                        );
-                                        let tracks = Track::from_db_tracks(&self.tracks, db_tracks);
-
-                                        self.player
-                                            .tracklist
-                                            .selected_playlist
-                                            .as_mut()
-                                            .unwrap()
-                                            .1 = tracks;
-                                    }
-                                    None => {}
+                                _ => None,
+                            },
+                            KeyCode::Char('l') => match c.modifiers {
+                                KeyModifiers::CONTROL => Some(Message::SkipToNext),
+                                KeyModifiers::NONE => {
+                                    Some(Message::SeekForward(Duration::from_secs(5)))
                                 }
-                            }
-                            Focus::Playlist => {
-                                let playlist = self.player.playlist.get_under_cursor();
+                                _ => None,
+                            },
+                            KeyCode::Char('s') => match c.modifiers {
+                                KeyModifiers::NONE => Some(Message::ToggleShufle),
+                                _ => None,
+                            },
+                            KeyCode::Char('r') => match c.modifiers {
+                                KeyModifiers::NONE => Some(Message::ToggleRepeat),
+                                _ => None,
+                            },
+                            KeyCode::Char('e') => Some(Message::SetBaseQueue),
+                            KeyCode::Char(' ') => Some(Message::Pause),
+                            _ => None,
+                        };
 
-                                playlist.delete(&mut self.db_conn);
+                        if msg.is_none() {
+                            match &self.focused_widget {
+                                Focus::Tracklist => self
+                                    .tracklist
+                                    .handle_input(c.code, c.modifiers)
+                                    .map(Message::Tracklist),
 
-                                let playlists = model::Playlist::get_all(&self.db_conn);
-                                self.player.playlist.list = playlists;
-                                self.player.playlist.cursor = 0;
-                                self.player.playlist.y_offset = 0;
+                                Focus::Playlist => self
+                                    .playlist
+                                    .handle_input(c.code, c.modifiers)
+                                    .map(Message::Playlist),
                             }
+                        } else {
+                            msg
                         }
                     }
-                    _ => {}
+                    Mode::Write => match self.focused_widget {
+                        Focus::Tracklist => None,
+                        Focus::Playlist => self
+                            .playlist
+                            .handle_input(c.code, c.modifiers)
+                            .map(Message::Playlist),
+                    },
                 }
             }
-            Event::Mouse(m) => {
-                let x = m.column;
-                let y = m.row;
+            Event::Mouse(ev) => {
+                let y = ev.row;
 
-                match m.kind {
-                    MouseEventKind::Down(button) => match button {
-                        MouseButton::Left => {
-                            if y == self.player.control_bar.control_bar_y {
-                                if self.player.control_bar.shuffle_pos.contains(&x) {
-                                    match self.shuffle {
-                                        Shuffle::None => self.shuffle = Shuffle::Random,
-                                        Shuffle::Random => self.shuffle = Shuffle::None,
-                                    }
-                                }
-
-                                if self.player.control_bar.seek_backward_pos.contains(&x) {
-                                    self.play_prev();
-                                }
-
-                                if self.player.control_bar.pause_pos.contains(&x) {
-                                    self.toggle_pause();
-                                }
-
-                                if self.player.control_bar.seek_forward_pos.contains(&x) {
-                                    self.play_next();
-                                }
-
-                                if self.player.control_bar.repeat_pos.contains(&x) {
-                                    match self.repeat {
-                                        Repeat::None => self.repeat = Repeat::Queue,
-                                        Repeat::Queue => self.repeat = Repeat::One,
-                                        Repeat::One => self.repeat = Repeat::None,
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    },
-                    _ => {}
+                if y == self.control_bar.control_bar_y {
+                    self.control_bar.handle_mouse(ev).map(Message::ControlBar)
+                } else {
+                    None
                 }
             }
-            Event::Resize(c, r) => {
-                self.player.resize(c, r);
+            Event::Resize(cols, rows) => {
+                let area = Rect::new(0, 0, cols, rows);
+                Some(Message::Resize(area))
             }
-            _ => {}
+            _ => return None,
         };
+
+        message
     }
 
-    fn handle_audio_rx(&mut self, message: Message) {
-        match message {
-            Message::TrackEnded => {
-                if let Repeat::One = self.repeat {
-                    let current = self.player.get_current().unwrap().clone();
-                    self.play(current);
-
-                    return;
-                };
-
-                let Some(track) = self.player.get_next(self.repeat) else {
-                    return;
-                };
-
-                self.play(track);
-            }
-            Message::CurrentVolume(vol) => {
-                self.volume = vol;
-            }
-            Message::CurrentPos(pos) => {
-                let dur = self.player.get_current().map(|c| c.duration);
+    fn handle_audio(&self, msg: music::Message) -> Option<Message> {
+        let message = match msg {
+            music::Message::TrackEnded => Some(Message::PlayNext),
+            music::Message::CurrentVolume(vol) => Some(Message::SetVolume(vol)),
+            music::Message::CurrentPos(pos) => {
+                let dur = self.tracklist.get_current().map(|c| c.duration);
                 match dur {
-                    Some(dur) => {
-                        self.progress = (pos.as_millis() as f32) / (dur.as_millis() as f32);
-                    }
-                    None => {}
+                    Some(dur) => Some(Message::SetProgress(
+                        (pos.as_millis() as f32) / (dur.as_millis() as f32),
+                    )),
+                    None => None,
                 }
             }
         };
+
+        message
     }
 
-    pub fn play(&mut self, track: Track) {
-        let file = std::fs::File::open(&track.path).unwrap();
-        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
-
-        self.audio_tx.send(Command::play(source)).unwrap();
-        self.start_timer = Instant::now();
-
-        self.player.set_current(track);
-    }
-
-    pub fn seek_backward(&mut self, duration: Duration) {
-        if self.start_timer.elapsed() < Duration::from_millis(100) {
-            return;
-        }
-        if self.last_seek_timer.elapsed() < Duration::from_millis(30) {
-            return;
-        }
-        self.audio_tx
-            .send(Command::seek_backward(duration))
-            .unwrap();
-        self.last_seek_timer = Instant::now()
-    }
-
-    pub fn seek_forward(&mut self, duration: Duration) {
-        if self.start_timer.elapsed() < Duration::from_millis(100) {
-            return;
-        }
-        if self.last_seek_timer.elapsed() < Duration::from_millis(30) {
-            return;
-        }
-        self.audio_tx.send(Command::seek_forward(duration)).unwrap();
-        self.last_seek_timer = Instant::now()
-    }
-
-    pub fn play_next(&mut self) {
-        let track = match self.player.get_next(self.repeat) {
-            Some(track) => track,
-            None => {
-                self.player.set_auto_queue(0);
-                let Some(track) = self.player.get_next(self.repeat) else {
-                    return;
-                };
-
-                track
+    fn update(&mut self, message: Message) -> Option<Message> {
+        match message {
+            Message::SeekForward(dur) => self.seek_forward(dur),
+            Message::SeekBackward(dur) => self.seek_backward(dur),
+            Message::VolumeUp(vol) => {
+                self.audio_tx.send(music::Command::volume_up(vol)).unwrap();
+                return None;
             }
+            Message::VolumeDown(vol) => {
+                self.audio_tx
+                    .send(music::Command::volume_down(vol))
+                    .unwrap();
+                return None;
+            }
+            Message::SetBaseQueue => {
+                return Some(Message::Tracklist(tracklist::Message::SetBaseQueue));
+            }
+            Message::Pause => {
+                self.paused = !self.paused;
+                if self.paused {
+                    self.audio_tx.send(Command::pause()).unwrap();
+                } else {
+                    self.audio_tx.send(Command::resume()).unwrap();
+                }
+                return Some(Message::ControlBar(control_bar::Message::SetPause(
+                    self.paused,
+                )));
+            }
+            Message::SkipToNext => return Some(Message::Tracklist(tracklist::Message::SkipToNext)),
+            Message::SkipToPrev => return Some(Message::Tracklist(tracklist::Message::SkipToPrev)),
+
+            Message::ToggleShufle => {
+                match self.shuffle {
+                    Shuffle::None => self.shuffle = Shuffle::Random,
+                    Shuffle::Random => self.shuffle = Shuffle::None,
+                }
+
+                return Some(Message::ControlBar(control_bar::Message::SetShuffle(
+                    self.shuffle.clone(),
+                )));
+            }
+            Message::ToggleRepeat => {
+                match self.repeat {
+                    Repeat::None => self.repeat = Repeat::Queue,
+                    Repeat::Queue => self.repeat = Repeat::One,
+                    Repeat::One => self.repeat = Repeat::None,
+                }
+
+                return Some(Message::ControlBar(control_bar::Message::SetRepeat(
+                    self.repeat.clone(),
+                )));
+            }
+            Message::SetProgress(progress) => {
+                let action = self
+                    .control_bar
+                    .update(control_bar::Message::SetProgress(progress))
+                    .map(Message::ControlBar)
+                    .map_instruction(Instruction::ControlBar);
+
+                let instruction_message = self.perform(action.instruction);
+
+                return Some(Message::Batch(vec![action.message, instruction_message]));
+            }
+            Message::SetVolume(vol) => self.volume = vol,
+            Message::PlayNext => {
+                let action = self
+                    .tracklist
+                    .update(tracklist::Message::GetNext)
+                    .map(Message::Tracklist)
+                    .map_instruction(Instruction::Tracklist);
+
+                let instruction_message = self.perform(action.instruction);
+
+                return Some(Message::Batch(vec![action.message, instruction_message]));
+            }
+            Message::Resize(area) => {
+                let [header_area, playlist_area, control_area] = Layout::new(
+                    Direction::Vertical,
+                    [
+                        Constraint::Length(2),
+                        Constraint::Fill(1),
+                        Constraint::Length(4),
+                    ],
+                )
+                .areas(area);
+
+                self.header.resize(header_area);
+
+                // Handle resizing messages later
+                self.tracklist
+                    .update(tracklist::Message::Resize(playlist_area));
+                self.playlist
+                    .update(playlist::Message::Resize(playlist_area));
+                self.control_bar
+                    .update(control_bar::Message::Resize(control_area));
+            }
+            Message::Exit => self.should_exit = true,
+
+            Message::Tracklist(message) => {
+                let action = self
+                    .tracklist
+                    .update(message)
+                    .map(Message::Tracklist)
+                    .map_instruction(Instruction::Tracklist);
+
+                let instruction_message = self.perform(action.instruction);
+
+                return Some(Message::Batch(vec![instruction_message, action.message]));
+            }
+            Message::Playlist(message) => {
+                let action = self
+                    .playlist
+                    .update(message)
+                    .map(Message::Playlist)
+                    .map_instruction(Instruction::Playlist);
+
+                let instruction_message = self.perform(action.instruction);
+
+                return Some(Message::Batch(vec![instruction_message, action.message]));
+            }
+            Message::ControlBar(message) => {
+                let action = self
+                    .control_bar
+                    .update(message)
+                    .map(Message::ControlBar)
+                    .map_instruction(Instruction::ControlBar);
+
+                let instruction_message = self.perform(action.instruction);
+
+                return Some(Message::Batch(vec![action.message, instruction_message]));
+            }
+
+            Message::Batch(batch) => {
+                let mut batch = VecDeque::from(batch);
+
+                while let Some(msg) = batch.pop_front() {
+                    let Some(msg) = msg else { continue };
+                    let mut curr_msg = self.update(msg);
+
+                    while let Some(message) = curr_msg {
+                        if let Message::Batch(new_batch) = message {
+                            batch.append(&mut new_batch.into());
+                            break;
+                        }
+
+                        curr_msg = self.update(message);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn perform(&mut self, instruction: Option<Instruction>) -> Option<Message> {
+        let Some(instruction) = instruction else {
+            return None;
         };
 
-        self.play(track);
-    }
+        match instruction {
+            Instruction::Tracklist(instruction) => {
+                use tracklist::Instruction;
 
-    pub fn play_prev(&mut self) {
-        let track = match self.player.get_prev() {
-            Some(track) => track,
-            None => {
-                self.player.tracklist.history = self.player.tracklist.list.clone();
+                match instruction {
+                    Instruction::Exit => self.should_exit = true,
+                    Instruction::Play(track) => {
+                        let file = std::fs::File::open(&track.path).unwrap();
+                        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
 
-                let Some(track) = self.player.get_prev() else {
-                    return;
-                };
-
-                track
+                        self.audio_tx.send(Command::play(source)).unwrap();
+                        return Some(Message::ControlBar(control_bar::Message::SetName(
+                            track
+                                .path
+                                .file_stem()
+                                .unwrap()
+                                .to_string_lossy()
+                                .to_string(),
+                        )));
+                    }
+                    Instruction::FocusPlaylist => {
+                        self.focused_widget = Focus::Playlist;
+                    }
+                    Instruction::AddToPlaylist(track) => {
+                        self.focused_widget = Focus::Playlist;
+                        self.playlist.update(playlist::Message::SetTrack(track));
+                    }
+                    Instruction::RemoveFromPlaylist(playlist, track) => {
+                        let playlist = playlist.remove_track(track, &self.db_conn);
+                        return Some(Message::Tracklist(tracklist::Message::SetPlaylist(
+                            playlist,
+                        )));
+                    }
+                    Instruction::SetHeader(header) => {
+                        self.header.playlist_name = header;
+                    }
+                }
             }
-        };
+            Instruction::Playlist(instruction) => {
+                use playlist::Instruction;
 
-        self.play(track);
+                match instruction {
+                    Instruction::FocusTracklist => self.focused_widget = Focus::Tracklist,
+                    Instruction::SetPlaylist(md) => {
+                        let playlist = model::Playlist::from_playlistmd(md, &self.db_conn);
+                        self.focused_widget = Focus::Tracklist;
+                        self.header.playlist_name = playlist.name.clone();
+                        return Some(Message::Tracklist(tracklist::Message::SetPlaylist(
+                            playlist,
+                        )));
+                    }
+                    Instruction::AddTrackToPlaylist(playlist_md, track) => {
+                        playlist_md.insert_track(track, &self.db_conn);
+                        self.focused_widget = Focus::Tracklist;
+                        // return Some(Message::Playlist(playlist::Message::SelectPlaylist));
+                    }
+                    Instruction::DeletePlaylist(md) => md.delete(&self.db_conn),
+                    Instruction::SetMode(mode) => self.mode = mode,
+                    Instruction::CreatePlaylist(name) => {
+                        match self.mode {
+                            Mode::Default => {}
+                            Mode::Write => self.mode = Mode::Default,
+                        };
+
+                        PlaylistMd::new(name).save(&self.db_conn);
+                        let playlists = model::PlaylistMd::get_all(&self.db_conn);
+                        return Some(Message::Playlist(playlist::Message::SetPlaylists(playlists)))
+                    }
+                }
+            }
+            Instruction::ControlBar(instruction) => {
+                use control_bar::Instruction;
+
+                match instruction {
+                    Instruction::SetShuffle(shuffle) => {
+                        self.shuffle = shuffle.clone();
+                        self.tracklist.shuffle = shuffle;
+                    }
+                    Instruction::SetRepeat(repeat) => {
+                        self.repeat = repeat.clone();
+                        self.tracklist.repeat = repeat;
+                    }
+                    Instruction::SetPause(paused) => {
+                        self.paused = paused;
+                        if self.paused {
+                            self.audio_tx.send(Command::Pause).unwrap();
+                        } else {
+                            self.audio_tx.send(Command::Resume).unwrap();
+                        }
+                    }
+                    Instruction::SeekForward(dur) => self.seek_forward(dur),
+                    Instruction::SeekBackward(dur) => self.seek_backward(dur),
+                }
+            }
+        }
+
+        None
     }
 
-    pub fn toggle_pause(&mut self) {
-        if self.paused {
-            self.audio_tx.send(Command::resume()).unwrap();
-            self.paused = false;
-        } else {
-            self.audio_tx.send(Command::pause()).unwrap();
-            self.paused = true;
+    fn seek_forward(&mut self, duration: Duration) {
+        if self.last_seek_timer.elapsed() > Duration::from_millis(50) {
+            self.audio_tx
+                .send(music::Command::seek_forward(duration))
+                .unwrap();
+            self.last_seek_timer = Instant::now();
+        }
+    }
+
+    fn seek_backward(&mut self, duration: Duration) {
+        if self.last_seek_timer.elapsed() > Duration::from_millis(50) {
+            self.audio_tx
+                .send(music::Command::seek_backward(duration))
+                .unwrap();
+            self.last_seek_timer = Instant::now();
         }
     }
 }
 
-impl Widget for &App {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+impl Widget for &Player {
+    fn render(self, area: Rect, buf: &mut Buffer)
     where
         Self: Sized,
     {
-        let mut context = self.context();
-        self.player.render(area, buf, &mut context);
-    }
-}
+        let [header_area, main_area, control_area] = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Length(Header::HEIGHT),
+                Constraint::Fill(1),
+                Constraint::Length(ControlBar::HEIGHT),
+            ],
+        )
+        .areas(area);
 
-pub struct Context {
-    pub paused: bool,
-    pub volume: f32,
-    pub progress: f32,
-    pub repeat: Repeat,
-    pub shuffle: Shuffle,
+        self.header.render(header_area, buf);
+
+        match self.focused_widget {
+            Focus::Tracklist => self.tracklist.render(main_area, buf),
+            Focus::Playlist => self.playlist.render(main_area, buf),
+        }
+
+        self.control_bar.render(control_area, buf);
+    }
 }

@@ -1,27 +1,43 @@
-use std::{collections::VecDeque, rc::Rc};
+use std::{
+    collections::VecDeque,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
+use rand::seq::SliceRandom;
 use ratatui::{
-    buffer::Buffer,
+    crossterm::event::{KeyCode, KeyModifiers},
     layout::Rect,
     style::{Color, Stylize},
     text::{Line, Text},
     widgets::Widget,
 };
 
-use crate::model::{self, Track};
+use crate::{
+    action::Action,
+    app::{Repeat, Shuffle},
+    model,
+};
 
 #[derive(Debug)]
 pub struct Tracklist {
-    pub base: Rc<[Track]>,
+    pub library: Rc<[model::Track]>,
+    pub base: Rc<[model::Track]>,
 
-    pub list: Vec<Track>,
-    pub auto_queue: VecDeque<Track>,
-    pub manual_queue: VecDeque<Track>,
-    pub history: Vec<Track>,
+    pub list: Vec<model::Track>,
+    pub auto_queue: VecDeque<model::Track>,
+    pub manual_queue: VecDeque<model::Track>,
+    pub history: Vec<model::Track>,
 
-    pub current_track: Option<Track>,
+    pub current_track: Option<model::Track>,
+    pub from_auto: bool,
 
-    pub selected_playlist: Option<(model::Playlist, Vec<Track>)>,
+    pub selected_playlist: Option<model::Playlist>,
+
+    pub shuffle: Shuffle,
+    pub repeat: Repeat,
+
+    pub start_timer: Instant,
 
     pub cursor: u16,
     pub show_cursor: bool,
@@ -31,16 +47,57 @@ pub struct Tracklist {
     pub area: Rect,
 }
 
+#[derive(Debug, Clone)]
+pub enum Instruction {
+    Play(model::Track),
+    FocusPlaylist,
+    AddToPlaylist(model::Track),
+    RemoveFromPlaylist(model::Playlist, model::Track),
+    SetHeader(String),
+    Exit,
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    SetCurrent,
+    QueueSelected,
+
+    SetBaseQueue,
+
+    SelectTrack,
+
+    SkipToNext,
+    SkipToPrev,
+
+    CursorDown(u16),
+    CursorUp(u16),
+
+    FocusPlaylist,
+
+    RemoveTrack,
+
+    GetNext,
+
+    SetPlaylist(model::Playlist),
+
+    Resize(Rect),
+}
+
 impl Tracklist {
-    pub fn new(paths: Rc<[Track]>, area: Rect) -> Self {
+    pub fn new(tracks: Rc<[model::Track]>, area: Rect, shuffle: Shuffle, repeat: Repeat) -> Self {
         Tracklist {
-            base: paths.clone(),
-            list: paths.to_vec(),
+            library: tracks.clone(),
+            base: tracks.clone(),
+            list: tracks.to_vec(),
             auto_queue: VecDeque::new(),
             manual_queue: VecDeque::new(),
             history: Vec::new(),
             current_track: None,
+            from_auto: false,
             selected_playlist: None,
+            start_timer: Instant::now(),
+            shuffle,
+            repeat,
             cursor: 0,
             show_cursor: true,
             y_offset: 0,
@@ -48,14 +105,158 @@ impl Tracklist {
         }
     }
 
-    pub fn get_under_cursor(&self) -> Track {
+    pub fn handle_input(&self, code: KeyCode, mods: KeyModifiers) -> Option<Message> {
+        let message = match code {
+            KeyCode::Enter => Message::SetCurrent,
+            KeyCode::Char('a') => Message::SelectTrack,
+            KeyCode::Char('q') => Message::QueueSelected,
+            KeyCode::Char('k') | KeyCode::Up => Message::CursorUp(1),
+            KeyCode::Char('j') | KeyCode::Down => match mods {
+                KeyModifiers::NONE => Message::CursorDown(1),
+                _ => return None,
+            },
+            KeyCode::Char('p') => Message::FocusPlaylist,
+            KeyCode::Char('d') => Message::RemoveTrack,
+            _ => return None,
+        };
+
+        Some(message)
+    }
+
+    pub fn update(&mut self, message: Message) -> Action<Instruction, Message> {
+        match message {
+            Message::GetNext => {
+                if self.start_timer.elapsed() < Duration::from_millis(50) {
+                    return Action::none();
+                }
+                let Some(track) = self.get_next() else {
+                    return Action::none();
+                };
+
+                self.start_timer = Instant::now();
+                self.current_track = Some(track.clone());
+                Action::instruction(Instruction::Play(track))
+            }
+            Message::SetBaseQueue => {
+                self.base = self.library.clone();
+                self.selected_playlist = None;
+                Action::instruction(Instruction::SetHeader("".to_string()))
+            }
+
+            Message::SelectTrack => {
+                let track = self.get_under_cursor();
+                Action::instruction(Instruction::AddToPlaylist(track))
+            }
+
+            Message::SetCurrent => {
+                if self.start_timer.elapsed() < Duration::from_millis(50) {
+                    return Action::none();
+                }
+
+                self.set_auto_queue((self.cursor + self.y_offset) as usize);
+                let track = self.auto_queue.pop_front().unwrap();
+
+                self.from_auto = true;
+                self.current_track = Some(track.clone());
+                self.start_timer = Instant::now();
+
+                Action::instruction(Instruction::Play(track))
+            }
+            Message::QueueSelected => {
+                let track = self.get_under_cursor();
+                self.manual_queue.push_back(track);
+                Action::none()
+            }
+            Message::CursorUp(amount) => {
+                self.cursor_up(amount);
+                Action::none()
+            }
+            Message::CursorDown(amount) => {
+                self.cursor_down(amount);
+                Action::none()
+            }
+            Message::SkipToNext => {
+                if self.start_timer.elapsed() < Duration::from_millis(50) {
+                    return Action::none();
+                }
+
+                let track = match self.get_next() {
+                    Some(track) => track,
+                    None => {
+                        self.set_auto_queue(0);
+                        let Some(track) = self.get_next() else {
+                            return Action::none();
+                        };
+
+                        track
+                    }
+                };
+
+                self.current_track = Some(track.clone());
+                self.start_timer = Instant::now();
+
+                Action::instruction(Instruction::Play(track))
+            }
+            Message::SkipToPrev => {
+                if self.start_timer.elapsed() < Duration::from_millis(50) {
+                    return Action::none();
+                }
+
+                let track = match self.get_prev() {
+                    Some(track) => track,
+                    None => {
+                        self.history = self.list.clone();
+
+                        let Some(track) = self.get_prev() else {
+                            return Action::none();
+                        };
+
+                        track
+                    }
+                };
+
+                self.current_track = Some(track.clone());
+                self.start_timer = Instant::now();
+                Action::instruction(Instruction::Play(track))
+            }
+            Message::FocusPlaylist => Action::instruction(Instruction::FocusPlaylist),
+            Message::RemoveTrack => {
+                if let Some(playlist) = self.selected_playlist.take() {
+                    let index = (self.cursor + self.y_offset) as usize;
+                    let track = playlist.tracks[index].clone();
+                    Action::instruction(Instruction::RemoveFromPlaylist(playlist, track))
+                } else {
+                    Action::none()
+                }
+            }
+            Message::SetPlaylist(playlist) => {
+                self.selected_playlist = Some(playlist);
+                self.cursor = 0;
+                self.y_offset = 0;
+                Action::none()
+            }
+            Message::Resize(area) => {
+                self.area = area;
+                Action::none()
+            }
+        }
+    }
+
+    pub fn get_current(&self) -> Option<model::Track> {
+        self.current_track.clone()
+    }
+
+    fn get_under_cursor(&self) -> model::Track {
         let index = (self.cursor + self.y_offset) as usize;
 
         match &self.selected_playlist {
-            Some((_, tracks)) => {
-                assert!(index < tracks.len(), "Index of cursor is out of bounds");
+            Some(playlist) => {
+                assert!(
+                    index < playlist.tracks.len(),
+                    "Index of cursor is out of bounds"
+                );
 
-                tracks[index].clone()
+                playlist.tracks[index].clone()
             }
             None => {
                 assert!(index < self.base.len(), "Index of cursor is out of bounds");
@@ -65,7 +266,7 @@ impl Tracklist {
         }
     }
 
-    pub fn cursor_up(&mut self, count: u16) {
+    fn cursor_up(&mut self, count: u16) {
         if self.cursor < count {
             let rest = count - self.cursor;
             self.y_offset = self.y_offset.saturating_sub(rest);
@@ -74,11 +275,11 @@ impl Tracklist {
         }
     }
 
-    pub fn cursor_down(&mut self, count: u16) {
+    fn cursor_down(&mut self, count: u16) {
         let total = self
             .selected_playlist
             .as_ref()
-            .map(|(_, tracks)| tracks.len() as u16)
+            .map(|playlist| playlist.tracks.len() as u16)
             .unwrap_or(self.base.len() as u16);
 
         if self.cursor + (count as u16) < self.area.height
@@ -90,13 +291,103 @@ impl Tracklist {
         }
     }
 
-    pub fn resize(&mut self, area: Rect) {
-        self.area = area;
+    fn set_auto_queue(&mut self, index: usize) {
+        if let Some(playlist) = &self.selected_playlist {
+            self.base = playlist.tracks.clone().into();
+        } else {
+            self.base = self.library.clone();
+        };
+
+        let index = match self.shuffle {
+            Shuffle::Random => {
+                self.list = self.base.to_vec();
+
+                self.list.swap(index, 0);
+                self.list[1..].shuffle(&mut rand::rng());
+                0
+            }
+            _ => {
+                self.list = self.base.to_vec();
+                index
+            }
+        };
+
+        let mut list = self.list.clone();
+
+        let after = list.split_off(index);
+
+        self.history = list;
+        self.auto_queue = after.into();
+    }
+
+    fn get_next(&mut self) -> Option<model::Track> {
+        let track = if self.manual_queue.is_empty() {
+            match self.repeat {
+                Repeat::None => {
+                    let track = self.auto_queue.pop_front()?;
+                    let current = self.current_track.take()?;
+
+                    if self.from_auto {
+                        self.history.push(current);
+                    }
+                    self.from_auto = true;
+
+                    track
+                }
+                Repeat::Queue | Repeat::One => {
+                    let current = self.current_track.take()?;
+                    if self.from_auto {
+                        self.history.push(current);
+                    }
+                    self.from_auto = true;
+
+                    let track = match self.auto_queue.pop_front() {
+                        Some(track) => track,
+                        None => {
+                            self.auto_queue = self.list.clone().into();
+
+                            self.auto_queue.pop_front().unwrap()
+                        }
+                    };
+
+                    self.from_auto = true;
+                    track
+                }
+            }
+        } else {
+            if self.from_auto {
+                self.current_track.take().map(|t| self.history.push(t));
+            }
+
+            self.from_auto = false;
+            let next_track = self.manual_queue.pop_front().unwrap();
+
+            next_track
+        };
+
+        Some(track)
+    }
+
+    pub fn get_prev(&mut self) -> Option<model::Track> {
+        if self.history.is_empty() {
+            return None;
+        }
+
+        if self.from_auto {
+            let current = self.current_track.take()?;
+            self.auto_queue.push_front(current);
+        }
+
+        self.from_auto = true;
+
+        let track = self.history.pop().unwrap();
+
+        Some(track)
     }
 }
 
 impl Widget for &Tracklist {
-    fn render(self, area: Rect, buf: &mut Buffer)
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
     {
@@ -107,10 +398,10 @@ impl Widget for &Tracklist {
         }
 
         let current = self.current_track.as_ref();
-        let list: &[Track] = self
+        let list: &[model::Track] = self
             .selected_playlist
             .as_ref()
-            .map(|(_, tracks)| &**tracks) // LOL
+            .map(|playlist| &*playlist.tracks)
             .unwrap_or(&*self.base);
 
         let list = match current {
@@ -119,6 +410,7 @@ impl Widget for &Tracklist {
                     .skip(self.y_offset as usize)
                     .enumerate()
                     .map(|(i, t)| {
+                        let i = i + self.y_offset as usize;
                         let path = t.path.to_string_lossy();
                         let name = path.split("/").last().unwrap().to_string();
 
@@ -128,7 +420,7 @@ impl Widget for &Tracklist {
                             && (self.y_offset..self.y_offset + self.area.height)
                                 .contains(&(i as u16))
                         {
-                            let color = if self.base[(self.cursor + self.y_offset) as usize].uuid
+                            let color = if list[(self.cursor + self.y_offset) as usize].uuid
                                 == current.uuid
                             {
                                 Color::Yellow

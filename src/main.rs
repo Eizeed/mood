@@ -1,25 +1,23 @@
 use ratatui::layout::Rect;
 
-use crate::{app::App, io::get_config};
+use crate::app::Player;
 
 mod app;
-mod config;
 mod input;
 mod io;
 mod music;
 mod widget;
-mod screen;
 mod model;
+mod action;
+mod config;
 
 fn main() {
     let terminal = ratatui::init();
 
-    let config = get_config();
-
     let size = terminal.size().unwrap();
     let area = Rect::new(0, 0, size.width, size.height);
 
-    let app = App::new(config, area);
+    let app = Player::new(area);
     app.start(terminal);
 
     ratatui::restore();

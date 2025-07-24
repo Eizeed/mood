@@ -1,9 +1,5 @@
-pub mod control_bar;
-pub mod header;
 pub mod tracklist;
+pub mod header;
+pub mod control_bar;
 pub mod playlist;
-
-pub use control_bar::ControlBar;
-pub use header::Header;
-pub use tracklist::Tracklist;
-pub use playlist::Playlist;
+pub mod popup;

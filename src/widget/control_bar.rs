@@ -1,12 +1,17 @@
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 
 use ratatui::{
+    buffer::Buffer,
+    crossterm::event::{MouseEvent, MouseEventKind},
     layout::{Constraint, Direction, Layout, Rect},
     text::Line,
-    widgets::{Block, Borders, StatefulWidget, Widget},
+    widgets::{Block, Borders, Widget},
 };
 
-use crate::app::{Context, Repeat, Shuffle};
+use crate::{
+    action::Action,
+    app::{Repeat, Shuffle},
+};
 
 #[derive(Debug)]
 pub struct ControlBar {
@@ -18,6 +23,10 @@ pub struct ControlBar {
 
     // duration
     // pos
+    pub progress: f32,
+    pub repeat: Repeat,
+    pub shuffle: Shuffle,
+    pub paused: bool,
 
     pub control_bar_y: u16,
 
@@ -28,10 +37,37 @@ pub struct ControlBar {
     pub repeat_pos: Range<u16>,
 }
 
+#[derive(Debug, Clone)]
+pub enum Instruction {
+    SetShuffle(Shuffle),
+    SetRepeat(Repeat),
+    SetPause(bool),
+    SeekForward(Duration),
+    SeekBackward(Duration),
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    SetProgress(f32),
+    SetName(String),
+
+    ToggleShuffle,
+    ToggleRepeat,
+    TogglePause,
+    SeekForward(Duration),
+    SeekBackward(Duration),
+
+    SetShuffle(Shuffle),
+    SetRepeat(Repeat),
+    SetPause(bool),
+
+    Resize(Rect),
+}
+
 impl ControlBar {
     pub const HEIGHT: u16 = 4;
 
-    pub fn new(area: Rect) -> Self {
+    pub fn new(area: Rect, progress: f32, shuffle: Shuffle, repeat: Repeat) -> Self {
         let [_, _, _, button_area] = Layout::new(
             Direction::Vertical,
             [
@@ -66,6 +102,11 @@ impl ControlBar {
         ControlBar {
             name: "".to_string(),
 
+            progress,
+            repeat,
+            shuffle,
+            paused: false,
+
             control_bar_y,
 
             shuffle_pos,
@@ -76,7 +117,81 @@ impl ControlBar {
         }
     }
 
-    pub fn resize(&mut self, area: Rect) {
+    pub fn handle_mouse(&self, ev: MouseEvent) -> Option<Message> {
+        let x = ev.column;
+
+        match ev.kind {
+            MouseEventKind::Down(_button) => {
+                if self.repeat_pos.contains(&x) {
+                    return Some(Message::ToggleRepeat);
+                }
+
+                if self.seek_backward_pos.contains(&x) {
+                    return Some(Message::SeekBackward(Duration::from_secs(5)))
+                }
+
+                if self.shuffle_pos.contains(&x) {
+                    return Some(Message::ToggleShuffle);
+                }
+
+                if self.seek_forward_pos.contains(&x) {
+                    return Some(Message::SeekForward(Duration::from_secs(5)))
+                }
+
+                if self.pause_pos.contains(&x) {
+                    eprintln!("??");
+                    return Some(Message::TogglePause);
+                }
+            }
+            _ => {}
+        }
+
+        None
+    }
+
+    pub fn update(&mut self, message: Message) -> Action<Instruction, Message> {
+        match message {
+            Message::SetProgress(progress) => {
+                self.progress = progress;
+            }
+            Message::SetName(name) => {
+                self.name = name;
+            }
+            Message::ToggleShuffle => {
+                match self.shuffle {
+                    Shuffle::None => self.shuffle = Shuffle::Random,
+                    Shuffle::Random => self.shuffle = Shuffle::None,
+                }
+
+                return Action::instruction(Instruction::SetShuffle(self.shuffle.clone()));
+            }
+            Message::ToggleRepeat => {
+                match self.repeat {
+                    Repeat::None => self.repeat = Repeat::Queue,
+                    Repeat::Queue => self.repeat = Repeat::One,
+                    Repeat::One => self.repeat = Repeat::None,
+                }
+
+                return Action::instruction(Instruction::SetRepeat(self.repeat.clone()));
+            }
+            Message::TogglePause => {
+                self.paused = !self.paused;
+                return Action::instruction(Instruction::SetPause(self.paused));
+            }
+            Message::SeekForward(dur) => return Action::instruction(Instruction::SeekForward(dur)),
+            Message::SeekBackward(dur) => return Action::instruction(Instruction::SeekBackward(dur)),
+
+            Message::SetShuffle(shuffle) => self.shuffle = shuffle,
+            Message::SetRepeat(repeat) => self.repeat = repeat,
+            Message::SetPause(paused) => self.paused = paused,
+
+            Message::Resize(area) => self.resize(area),
+        }
+
+        Action::none()
+    }
+
+    fn resize(&mut self, area: Rect) {
         let [_, _, _, button_area] = Layout::new(
             Direction::Vertical,
             [
@@ -110,10 +225,8 @@ impl ControlBar {
     }
 }
 
-impl StatefulWidget for &ControlBar {
-    type State = Context;
-
-    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer, state: &mut Self::State) {
+impl Widget for &ControlBar {
+    fn render(self, area: Rect, buf: &mut Buffer) {
         debug_assert!(area.height == 4);
 
         let [border, name_area, progress_area, button_area] = Layout::new(
@@ -145,7 +258,7 @@ impl StatefulWidget for &ControlBar {
 
         {
             let width = progress_area.width;
-            let progress =  state.progress * 100.0;
+            let progress = self.progress * 100.0;
 
             let one_cell_rat = 100.0 / width as f32;
 
@@ -173,12 +286,26 @@ impl StatefulWidget for &ControlBar {
             )
             .areas(button_area);
 
-            let control = match state.repeat {
+            let control = match self.repeat {
                 Repeat::None | Repeat::Queue => "[s] [<] [\u{23F8}] [>] [r]",
                 Repeat::One => "[s] [<] [\u{23F8}] [>] [R]",
             };
 
-            match state.shuffle {
+            if self.paused {
+                for i in self.pause_pos.clone() {
+                    buf.cell_mut((i, button_area.y))
+                        .unwrap()
+                        .set_fg(ratatui::style::Color::Green);
+                }
+            } else {
+                for i in self.pause_pos.clone() {
+                    buf.cell_mut((i, button_area.y))
+                        .unwrap()
+                        .set_fg(ratatui::style::Color::Reset);
+                }
+            }
+
+            match self.shuffle {
                 Shuffle::None => {
                     for i in self.shuffle_pos.clone() {
                         buf.cell_mut((i, button_area.y))
@@ -195,7 +322,7 @@ impl StatefulWidget for &ControlBar {
                 }
             };
 
-            match state.repeat {
+            match self.repeat {
                 Repeat::None => {
                     for i in self.repeat_pos.clone() {
                         buf.cell_mut((i, button_area.y))

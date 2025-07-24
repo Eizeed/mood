@@ -75,7 +75,7 @@ impl Command {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Message {
     TrackEnded,
     CurrentVolume(f32),
