@@ -19,8 +19,7 @@ impl<M> Task<M> {
     {
         let tasks: Vec<M> = tasks
             .into_iter()
-            .map(|t| t.messages)
-            .filter_map(|opt| opt)
+            .filter_map(|t| t.messages)
             .flatten()
             .collect();
 
@@ -31,9 +30,7 @@ impl<M> Task<M> {
 
     pub fn map<N>(self, f: impl Fn(M) -> N) -> Task<N> {
         Task {
-            messages: self
-                .messages
-                .and_then(|v| Some(v.into_iter().map(|m| f(m)).collect())),
+            messages: self.messages.map(|v| v.into_iter().map(f).collect()),
         }
     }
 
@@ -42,6 +39,6 @@ impl<M> Task<M> {
     }
 
     pub fn into_inner(self) -> Vec<M> {
-        self.messages.unwrap_or(vec![])
+        self.messages.unwrap_or_default()
     }
 }

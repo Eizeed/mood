@@ -44,7 +44,6 @@ impl PlaylistMd {
                 Ok(PlaylistMd { uuid, name })
             })
             .unwrap()
-            .into_iter()
             .map(|p| p.unwrap())
             .collect()
     }
@@ -73,11 +72,7 @@ impl Playlist {
         )
         .unwrap();
 
-        self.tracks = self
-            .tracks
-            .into_iter()
-            .filter(|t| t.uuid != track.uuid)
-            .collect();
+        self.tracks.retain(|t| t.uuid != track.uuid);
 
         self
     }

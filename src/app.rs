@@ -250,7 +250,7 @@ impl Player {
     }
 
     fn handle_event(&self, ev: Event) -> Option<Message> {
-        let message = match ev {
+        match ev {
             Event::Key(c) => {
                 if c.kind != KeyEventKind::Press {
                     return None;
@@ -333,28 +333,21 @@ impl Player {
                 let area = Rect::new(0, 0, cols, rows);
                 Some(Message::Resize(area))
             }
-            _ => return None,
-        };
-
-        message
+            _ => None,
+        }
     }
 
     fn handle_audio(&self, msg: music::Message) -> Option<Message> {
-        let message = match msg {
+        match msg {
             music::Message::TrackEnded => Some(Message::PlayNext),
             music::Message::CurrentVolume(vol) => Some(Message::SetVolume(vol)),
             music::Message::CurrentPos(pos) => {
                 let dur = self.tracklist.get_current().map(|c| c.duration);
-                match dur {
-                    Some(dur) => Some(Message::SetProgress(
-                        (pos.as_millis() as f32) / (dur.as_millis() as f32),
-                    )),
-                    None => None,
-                }
+                dur.map(|dur| {
+                    Message::SetProgress((pos.as_millis() as f32) / (dur.as_millis() as f32))
+                })
             }
-        };
-
-        message
+        }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {

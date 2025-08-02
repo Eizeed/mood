@@ -209,10 +209,9 @@ impl Playlist {
     fn cursor_down(&mut self, count: u16) {
         let total = self.list.len() as u16;
 
-        if self.cursor + (count as u16) < self.area.height
-            && self.y_offset + self.cursor + (count as u16) < total
+        if self.cursor + count < self.area.height && self.y_offset + self.cursor + count < total
         {
-            self.cursor += count as u16;
+            self.cursor += count;
         } else if self.y_offset + self.area.height - 1 < total - 1 {
             self.y_offset += 1;
         }

@@ -43,6 +43,12 @@ impl Popup {
     }
 }
 
+impl Default for Popup {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Widget for &Popup {
     fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
     where

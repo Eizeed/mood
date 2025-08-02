@@ -275,10 +275,10 @@ impl Tracklist {
             .map(|playlist| playlist.tracks.len() as u16)
             .unwrap_or(self.base.len() as u16);
 
-        if self.cursor + (count as u16) < self.area.height
-            && self.y_offset + self.cursor + (count as u16) < total
+        if self.cursor + (count) < self.area.height
+            && self.y_offset + self.cursor + (count) < total
         {
-            self.cursor += count as u16;
+            self.cursor += count;
         } else if self.y_offset + self.area.height - 1 < total - 1 {
             self.y_offset += 1;
         }
@@ -349,13 +349,13 @@ impl Tracklist {
             }
         } else {
             if self.from_auto {
-                self.current_track.take().map(|t| self.history.push(t));
+                if let Some(current_track) = self.current_track.take() {
+                    self.history.push(current_track)
+                };
             }
 
             self.from_auto = false;
-            let next_track = self.manual_queue.pop_front().unwrap();
-
-            next_track
+            self.manual_queue.pop_front().unwrap()
         };
 
         Some(track)
@@ -398,18 +398,16 @@ impl Widget for &Tracklist {
             .unwrap_or(&*self.base);
 
         let list = match current {
-            Some(current) => Text::from_iter(
-                list.into_iter()
-                    .skip(self.y_offset as usize)
-                    .enumerate()
-                    .map(|(i, t)| {
+            Some(current) => {
+                Text::from_iter(list.iter().skip(self.y_offset as usize).enumerate().map(
+                    |(i, t)| {
                         let i = i + self.y_offset as usize;
                         let path = t.path.to_string_lossy();
                         let name = path.split("/").last().unwrap().to_string();
 
                         // NOTE: Idk what this is doing (i wrote it)
                         // spend some time in future to understand
-                        let line = if current.path.to_string_lossy().contains(&name)
+                        if current.path.to_string_lossy().contains(&name)
                             && (self.y_offset..self.y_offset + self.area.height)
                                 .contains(&(i as u16))
                         {
@@ -424,12 +422,11 @@ impl Widget for &Tracklist {
                             Line::raw(name).fg(color)
                         } else {
                             Line::raw(name)
-                        };
-
-                        line
-                    }),
-            ),
-            None => Text::from_iter(list.into_iter().skip(self.y_offset as usize).map(|t| {
+                        }
+                    },
+                ))
+            }
+            None => Text::from_iter(list.iter().skip(self.y_offset as usize).map(|t| {
                 Line::raw(
                     t.path
                         .to_string_lossy()

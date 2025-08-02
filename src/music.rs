@@ -4,7 +4,7 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use rodio::{Decoder, OutputStream, Sink, Source, source::SeekError};
 
 pub enum Command {
-    Play(Decoder<BufReader<File>>),
+    Play(Box<Decoder<BufReader<File>>>),
     Pause,
     Resume,
 
@@ -36,7 +36,7 @@ impl Command {
     where
         T: Into<Decoder<BufReader<File>>>,
     {
-        Command::Play(source.into())
+        Command::Play(Box::new(source.into()))
     }
 
     pub fn resume() -> Self {
@@ -100,7 +100,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.inner.next();
 
-        if let None = next {
+        if next.is_none() {
             self.main_handle.send(Message::TrackEnded).unwrap();
         }
 
@@ -144,23 +144,21 @@ pub fn spawn_music(rx: Receiver<Command>, tx: Sender<Message>) {
 
             let command = match rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(command) => command,
-                Err(err) => {
-                    match err {
-                        RecvTimeoutError::Timeout => {
-                            if !sink.empty() && !sink.is_paused() {
-                                tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
-                            }
-                            continue;
+                Err(err) => match err {
+                    RecvTimeoutError::Timeout => {
+                        if !sink.empty() && !sink.is_paused() {
+                            tx.send(Message::CurrentPos(sink.get_pos())).unwrap();
                         }
-                        RecvTimeoutError::Disconnected => return,
+                        continue;
                     }
-                }
+                    RecvTimeoutError::Disconnected => return,
+                },
             };
 
             match command {
                 Command::Play(source) => {
                     let source = NotifySource {
-                        inner: source,
+                        inner: *source,
                         main_handle: tx.clone(),
                     };
 

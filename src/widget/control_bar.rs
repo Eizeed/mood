@@ -117,6 +117,7 @@ impl ControlBar {
         }
     }
 
+    #[allow(clippy::single_match)]
     pub fn handle_mouse(&self, ev: MouseEvent) -> Option<Message> {
         let x = ev.column;
 
@@ -127,7 +128,7 @@ impl ControlBar {
                 }
 
                 if self.seek_backward_pos.contains(&x) {
-                    return Some(Message::SeekBackward(Duration::from_secs(5)))
+                    return Some(Message::SeekBackward(Duration::from_secs(5)));
                 }
 
                 if self.shuffle_pos.contains(&x) {
@@ -135,7 +136,7 @@ impl ControlBar {
                 }
 
                 if self.seek_forward_pos.contains(&x) {
-                    return Some(Message::SeekForward(Duration::from_secs(5)))
+                    return Some(Message::SeekForward(Duration::from_secs(5)));
                 }
 
                 if self.pause_pos.contains(&x) {
@@ -179,7 +180,9 @@ impl ControlBar {
                 return Action::instruction(Instruction::SetPause(self.paused));
             }
             Message::SeekForward(dur) => return Action::instruction(Instruction::SeekForward(dur)),
-            Message::SeekBackward(dur) => return Action::instruction(Instruction::SeekBackward(dur)),
+            Message::SeekBackward(dur) => {
+                return Action::instruction(Instruction::SeekBackward(dur));
+            }
 
             Message::SetShuffle(shuffle) => self.shuffle = shuffle,
             Message::SetRepeat(repeat) => self.repeat = repeat,
@@ -229,18 +232,20 @@ impl Widget for &ControlBar {
     fn render(self, area: Rect, buf: &mut Buffer) {
         debug_assert!(area.height == 4);
 
-        let [border, name_area, progress_area, button_area] = Layout::new(
+        let block = Block::new().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT);
+        let inner_area = block.inner(area);
+
+        block.render(area, buf);
+
+        let [name_area, progress_area, button_area] = Layout::new(
             Direction::Vertical,
             [
                 Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Length(1),
-                Constraint::Length(1),
             ],
         )
-        .areas(area);
-
-        Block::new().borders(Borders::TOP).render(border, buf);
+        .areas(inner_area);
 
         {
             Line::raw(&self.name).centered().render(name_area, buf);

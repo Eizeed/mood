@@ -28,14 +28,9 @@ pub fn get_files<T: AsRef<Path>>(path: T, extension: &str) -> Vec<PathBuf> {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 stack.push(path);
-            } else {
-                match path.extension() {
-                    Some(ext) => {
-                        if ext == extension {
-                            files.push(path);
-                        }
-                    }
-                    None => {}
+            } else if let Some(ext) = path.extension() {
+                if ext == extension {
+                    files.push(path);
                 }
             }
         }
@@ -68,20 +63,9 @@ pub fn get_config() -> Config {
                 config.audio_dir_path = val.into();
             }
             "volume" => {
-                let vol = val.parse();
-                match vol {
-                    Ok(vol) => {
-                        let vol = if vol > 1.0 {
-                            1.0
-                        } else if vol < 0.0 {
-                            0.0
-                        } else {
-                            vol
-                        };
-
-                        config.volume = vol;
-                    }
-                    Err(_) => {}
+                if let Ok(vol) = val.parse::<f32>() {
+                    let vol = vol.clamp(0.0, 1.0);
+                    config.volume = vol;
                 }
             }
             "shuffle" => {
@@ -158,19 +142,17 @@ where
 
             let tag = match tagged.primary_tag_mut() {
                 Some(tag) => {
-                    if let Some(val) = tag
+                    if let Some(ItemValue::Text(uuid)) = tag
                         .get(&ItemKey::Unknown("MOOD_UUID".to_string()))
                         .map(|t| t.value())
                     {
-                        if let ItemValue::Text(uuid) = val {
-                            if let Ok(uuid) = Uuid::parse_str(uuid) {
-                                return Track {
-                                    uuid,
-                                    duration,
-                                    path: p,
-                                };
+                        if let Ok(uuid) = Uuid::parse_str(uuid) {
+                            return Track {
+                                uuid,
+                                duration,
+                                path: p,
                             };
-                        }
+                        };
                     }
 
                     tag
