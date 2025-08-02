@@ -9,6 +9,7 @@ mod music;
 mod widget;
 mod model;
 mod action;
+mod task;
 mod config;
 
 fn main() {

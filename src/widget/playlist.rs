@@ -135,8 +135,11 @@ impl Playlist {
             }
             Message::FocusTracklist => Action::instruction(Instruction::FocusTracklist),
             Message::SelectPlaylist => {
-                let playlist_md = self.get_under_cursor();
-                Action::instruction(Instruction::SetPlaylist(playlist_md))
+                if let Some(playlist_md) = self.get_under_cursor() {
+                    Action::instruction(Instruction::SetPlaylist(playlist_md))
+                } else {
+                    Action::none()
+                }
             }
             Message::SetTrack(track) => {
                 self.selected_track = Some(track);
@@ -147,15 +150,20 @@ impl Playlist {
                     .selected_track
                     .take()
                     .expect("Selected track is expected to be some");
-                let playlist_md = self.get_under_cursor();
 
-                Action::instruction(Instruction::AddTrackToPlaylist(playlist_md, selected))
+                if let Some(playlist_md) = self.get_under_cursor() {
+                    Action::instruction(Instruction::AddTrackToPlaylist(playlist_md, selected))
+                } else {
+                    Action::none()
+                }
             }
             Message::DeletePlaylist => {
-                let playlist_md = self.get_under_cursor();
-                self.list.retain(|p| p.uuid != playlist_md.uuid);
-
-                Action::instruction(Instruction::DeletePlaylist(playlist_md))
+                if let Some(playlist_md) = self.get_under_cursor() {
+                    self.list.retain(|p| p.uuid != playlist_md.uuid);
+                    Action::instruction(Instruction::DeletePlaylist(playlist_md))
+                } else {
+                    Action::none()
+                }
             }
             Message::CreatePlaylist => {
                 self.focused_widget = Focus::Parent;
@@ -183,12 +191,10 @@ impl Playlist {
         }
     }
 
-    fn get_under_cursor(&self) -> model::PlaylistMd {
+    fn get_under_cursor(&self) -> Option<model::PlaylistMd> {
         let index = (self.cursor + self.y_offset) as usize;
 
-        assert!(index < self.list.len(), "Index of cursor is out of bounds");
-
-        self.list[index].clone()
+        self.list.get(index).cloned()
     }
 
     fn cursor_up(&mut self, count: u16) {

@@ -27,6 +27,7 @@ use crate::{
     io::{add_uuid_metadata, get_config, get_files, save_config},
     model::{self, PlaylistMd, track::Track},
     music::{self, Command, spawn_music},
+    task::Task,
     widget::{
         control_bar::{self, ControlBar},
         header::Header,
@@ -97,8 +98,6 @@ pub enum Message {
     Resize(Rect),
 
     Exit,
-
-    Batch(Vec<Option<Message>>),
 }
 
 #[derive(Debug, Clone)]
@@ -190,6 +189,7 @@ impl Player {
     pub fn start<B: Backend>(mut self, mut terminal: Terminal<B>) {
         stdout().execute(EnableMouseCapture).unwrap();
 
+        let mut task_queue = VecDeque::with_capacity(16);
         loop {
             terminal
                 .draw(|f| self.render(f.area(), f.buffer_mut()))
@@ -198,26 +198,24 @@ impl Player {
             crossbeam_channel::select_biased! {
                 recv(self.input_rx) -> event => {
                     let event = event.unwrap();
-                    let mut curr_message = self.handle_event(event);
-
-                    while let Some(message) = curr_message {
-                        curr_message = self.update(message);
-                    };
+                    if let Some(curr_message) = self.handle_event(event) {
+                        let task = self.update(curr_message);
+                        self.handle_task(task, &mut task_queue);
+                    }
                 }
                 recv(self.audio_rx) -> msg => {
                     let msg = msg.unwrap();
-                    let mut curr_message = self.handle_audio(msg);
 
-                    while let Some(message) = curr_message {
-                        curr_message = self.update(message);
-                    };
+                    if let Some(curr_message) = self.handle_audio(msg) {
+                        let task = self.update(curr_message);
+                        self.handle_task(task, &mut task_queue);
+                    }
 
                     for msg in self.audio_rx.clone().try_iter() {
-                        let mut curr_message = self.handle_audio(msg);
-
-                        while let Some(message) = curr_message {
-                            curr_message = self.update(message);
-                        };
+                        if let Some(curr_message) = self.handle_audio(msg) {
+                            let task = self.update(curr_message);
+                            self.handle_task(task, &mut task_queue);
+                        }
                     }
                 }
             };
@@ -235,6 +233,20 @@ impl Player {
         });
 
         stdout().execute(DisableMouseCapture).unwrap();
+    }
+
+    fn handle_task(&mut self, task: Task<Message>, task_queue: &mut VecDeque<Task<Message>>) {
+        task_queue.push_back(task);
+
+        while let Some(task) = task_queue.pop_front() {
+            let mut messages = task.into_inner();
+            while let Some(message) = messages.pop() {
+                let task = self.update(message);
+                if !task.is_none() {
+                    task_queue.push_front(task);
+                }
+            }
+        }
     }
 
     fn handle_event(&self, ev: Event) -> Option<Message> {
@@ -345,22 +357,22 @@ impl Player {
         message
     }
 
-    fn update(&mut self, message: Message) -> Option<Message> {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::SeekForward(dur) => self.seek_forward(dur),
             Message::SeekBackward(dur) => self.seek_backward(dur),
             Message::VolumeUp(vol) => {
                 self.audio_tx.send(music::Command::volume_up(vol)).unwrap();
-                return None;
+                return Task::none();
             }
             Message::VolumeDown(vol) => {
                 self.audio_tx
                     .send(music::Command::volume_down(vol))
                     .unwrap();
-                return None;
+                return Task::none();
             }
             Message::SetBaseQueue => {
-                return Some(Message::Tracklist(tracklist::Message::SetBaseQueue));
+                return Task::new(Message::Tracklist(tracklist::Message::SetBaseQueue));
             }
             Message::Pause => {
                 self.paused = !self.paused;
@@ -369,12 +381,16 @@ impl Player {
                 } else {
                     self.audio_tx.send(Command::resume()).unwrap();
                 }
-                return Some(Message::ControlBar(control_bar::Message::SetPause(
+                return Task::new(Message::ControlBar(control_bar::Message::SetPause(
                     self.paused,
                 )));
             }
-            Message::SkipToNext => return Some(Message::Tracklist(tracklist::Message::SkipToNext)),
-            Message::SkipToPrev => return Some(Message::Tracklist(tracklist::Message::SkipToPrev)),
+            Message::SkipToNext => {
+                return Task::new(Message::Tracklist(tracklist::Message::SkipToNext));
+            }
+            Message::SkipToPrev => {
+                return Task::new(Message::Tracklist(tracklist::Message::SkipToPrev));
+            }
 
             Message::ToggleShufle => {
                 match self.shuffle {
@@ -382,7 +398,7 @@ impl Player {
                     Shuffle::Random => self.shuffle = Shuffle::None,
                 }
 
-                return Some(Message::ControlBar(control_bar::Message::SetShuffle(
+                return Task::new(Message::ControlBar(control_bar::Message::SetShuffle(
                     self.shuffle.clone(),
                 )));
             }
@@ -393,7 +409,7 @@ impl Player {
                     Repeat::One => self.repeat = Repeat::None,
                 }
 
-                return Some(Message::ControlBar(control_bar::Message::SetRepeat(
+                return Task::new(Message::ControlBar(control_bar::Message::SetRepeat(
                     self.repeat.clone(),
                 )));
             }
@@ -406,7 +422,7 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Some(Message::Batch(vec![action.message, instruction_message]));
+                return Task::batch(vec![action.message, instruction_message]);
             }
             Message::SetVolume(vol) => self.volume = vol,
             Message::PlayNext => {
@@ -418,7 +434,7 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Some(Message::Batch(vec![action.message, instruction_message]));
+                return Task::batch(vec![action.message, instruction_message]);
             }
             Message::Resize(area) => {
                 let [header_area, playlist_area, control_area] = Layout::new(
@@ -452,7 +468,7 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Some(Message::Batch(vec![instruction_message, action.message]));
+                return Task::batch(vec![instruction_message, action.message]);
             }
             Message::Playlist(message) => {
                 let action = self
@@ -463,7 +479,7 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Some(Message::Batch(vec![instruction_message, action.message]));
+                return Task::batch(vec![instruction_message, action.message]);
             }
             Message::ControlBar(message) => {
                 let action = self
@@ -474,34 +490,16 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Some(Message::Batch(vec![action.message, instruction_message]));
-            }
-
-            Message::Batch(batch) => {
-                let mut batch = VecDeque::from(batch);
-
-                while let Some(msg) = batch.pop_front() {
-                    let Some(msg) = msg else { continue };
-                    let mut curr_msg = self.update(msg);
-
-                    while let Some(message) = curr_msg {
-                        if let Message::Batch(new_batch) = message {
-                            batch.append(&mut new_batch.into());
-                            break;
-                        }
-
-                        curr_msg = self.update(message);
-                    }
-                }
+                return Task::batch(vec![action.message, instruction_message]);
             }
         }
 
-        None
+        Task::none()
     }
 
-    fn perform(&mut self, instruction: Option<Instruction>) -> Option<Message> {
+    fn perform(&mut self, instruction: Option<Instruction>) -> Task<Message> {
         let Some(instruction) = instruction else {
-            return None;
+            return Task::none();
         };
 
         match instruction {
@@ -515,7 +513,7 @@ impl Player {
                         let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
 
                         self.audio_tx.send(Command::play(source)).unwrap();
-                        return Some(Message::ControlBar(control_bar::Message::SetName(
+                        return Task::new(Message::ControlBar(control_bar::Message::SetName(
                             track
                                 .path
                                 .file_stem()
@@ -533,7 +531,7 @@ impl Player {
                     }
                     Instruction::RemoveFromPlaylist(playlist, track) => {
                         let playlist = playlist.remove_track(track, &self.db_conn);
-                        return Some(Message::Tracklist(tracklist::Message::SetPlaylist(
+                        return Task::new(Message::Tracklist(tracklist::Message::SetPlaylist(
                             playlist,
                         )));
                     }
@@ -551,7 +549,7 @@ impl Player {
                         let playlist = model::Playlist::from_playlistmd(md, &self.db_conn);
                         self.focused_widget = Focus::Tracklist;
                         self.header.playlist_name = playlist.name.clone();
-                        return Some(Message::Tracklist(tracklist::Message::SetPlaylist(
+                        return Task::new(Message::Tracklist(tracklist::Message::SetPlaylist(
                             playlist,
                         )));
                     }
@@ -570,7 +568,9 @@ impl Player {
 
                         PlaylistMd::new(name).save(&self.db_conn);
                         let playlists = model::PlaylistMd::get_all(&self.db_conn);
-                        return Some(Message::Playlist(playlist::Message::SetPlaylists(playlists)))
+                        return Task::new(Message::Playlist(playlist::Message::SetPlaylists(
+                            playlists,
+                        )));
                     }
                 }
             }
@@ -600,7 +600,7 @@ impl Player {
             }
         }
 
-        None
+        Task::none()
     }
 
     fn seek_forward(&mut self, duration: Duration) {

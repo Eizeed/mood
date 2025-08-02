@@ -1,28 +1,29 @@
-#[derive(Debug)]
+use crate::task::Task;
+
 pub struct Action<I, Message> {
     pub instruction: Option<I>,
-    pub message: Option<Message>,
+    pub message: Task<Message>,
 }
 
 impl<I, Message> Action<I, Message> {
     pub fn none() -> Self {
         Self {
             instruction: None,
-            message: None,
+            message: Task::none(),
         }
     }
 
     pub fn instruction(instruction: I) -> Self {
         Self {
             instruction: Some(instruction),
-            message: None,
+            message: Task::none(),
         }
     }
 
     pub fn message(message: Message) -> Self {
         Self {
             instruction: None,
-            message: Some(message),
+            message: Task::new(message),
         }
     }
 
@@ -46,7 +47,7 @@ impl<I, Message> Action<I, Message> {
     }
 
     pub fn with_message(mut self, message: Message) -> Self {
-        self.message = Some(message);
+        self.message = Task::new(message);
         self
     }
 }

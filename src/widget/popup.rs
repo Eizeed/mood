@@ -4,6 +4,8 @@ use ratatui::{
     widgets::{Block, Paragraph, Widget},
 };
 
+use crate::task::Task;
+
 pub struct Popup {
     pub buffer: String,
 }
@@ -21,7 +23,7 @@ impl Popup {
         }
     }
 
-    pub fn handle_input(&self, code: KeyCode, mods: KeyModifiers) -> Option<Message> {
+    pub fn handle_input(&self, code: KeyCode, _mods: KeyModifiers) -> Option<Message> {
         match code {
             KeyCode::Char(ch) => Some(Message::Push(ch)),
             KeyCode::Backspace => Some(Message::Pop),
@@ -29,7 +31,7 @@ impl Popup {
         }
     }
 
-    pub fn update(&mut self, message: Message) -> Option<Message> {
+    pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Push(ch) => self.buffer.push(ch),
             Message::Pop => {
@@ -37,7 +39,7 @@ impl Popup {
             }
         }
 
-        None
+        Task::none()
     }
 }
 

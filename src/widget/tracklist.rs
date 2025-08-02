@@ -144,8 +144,11 @@ impl Tracklist {
             }
 
             Message::SelectTrack => {
-                let track = self.get_under_cursor();
-                Action::instruction(Instruction::AddToPlaylist(track))
+                if let Some(track) = self.get_under_cursor() {
+                    Action::instruction(Instruction::AddToPlaylist(track))
+                } else {
+                    Action::none()
+                }
             }
 
             Message::SetCurrent => {
@@ -163,8 +166,9 @@ impl Tracklist {
                 Action::instruction(Instruction::Play(track))
             }
             Message::QueueSelected => {
-                let track = self.get_under_cursor();
-                self.manual_queue.push_back(track);
+                if let Some(track) = self.get_under_cursor() {
+                    self.manual_queue.push_back(track);
+                };
                 Action::none()
             }
             Message::CursorUp(amount) => {
@@ -246,23 +250,12 @@ impl Tracklist {
         self.current_track.clone()
     }
 
-    fn get_under_cursor(&self) -> model::Track {
+    fn get_under_cursor(&self) -> Option<model::Track> {
         let index = (self.cursor + self.y_offset) as usize;
 
         match &self.selected_playlist {
-            Some(playlist) => {
-                assert!(
-                    index < playlist.tracks.len(),
-                    "Index of cursor is out of bounds"
-                );
-
-                playlist.tracks[index].clone()
-            }
-            None => {
-                assert!(index < self.base.len(), "Index of cursor is out of bounds");
-
-                self.base[index].clone()
-            }
+            Some(playlist) => playlist.tracks.get(index).cloned(),
+            None => self.base.get(index).cloned(),
         }
     }
 
