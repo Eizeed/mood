@@ -114,7 +114,7 @@ pub fn save_config(config: Config) {
 
     for line in content.lines() {
         if line.trim().starts_with("audio_path") {
-            config_str.push_str(&format!("{}\n", line));
+            config_str.push_str(&format!("{line}\n"));
         }
     }
 
