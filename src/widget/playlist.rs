@@ -232,7 +232,7 @@ impl Widget for &Playlist {
     where
         Self: Sized,
     {
-        if self.list.len() == 0 && matches!(self.focused_widget, Focus::Parent) {
+        if self.list.is_empty() && matches!(self.focused_widget, Focus::Parent) {
             let mut center_area = area;
             center_area.y = (area.y + area.height / 2) - 1;
             center_area.height = 3;

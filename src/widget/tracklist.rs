@@ -162,7 +162,7 @@ impl Tracklist {
                     self.base = self.library.clone();
                 };
 
-                if self.base.len() == 0 {
+                if self.base.is_empty() {
                     return Action::none();
                 }
 
@@ -403,7 +403,7 @@ impl Widget for &Tracklist {
             .map(|playlist| &*playlist.tracks)
             .unwrap_or(&*self.base);
 
-        if list.len() == 0 {
+        if list.is_empty() {
             let mut center_area = area;
             center_area.y = (area.y + area.height / 2) - 1;
             center_area.height = 3;
