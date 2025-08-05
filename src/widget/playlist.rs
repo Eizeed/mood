@@ -220,6 +220,9 @@ impl Playlist {
 
     fn resize(&mut self, area: Rect) {
         self.area = area;
+        if self.cursor > area.height - 1 {
+            self.cursor = area.height - 1;
+        }
     }
 }
 

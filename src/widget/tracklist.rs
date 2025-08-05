@@ -240,7 +240,8 @@ impl Tracklist {
                 Action::none()
             }
             Message::Resize(area) => {
-                self.area = area;
+                self.resize(area);
+
                 Action::none()
             }
         }
@@ -276,7 +277,8 @@ impl Tracklist {
             .map(|playlist| playlist.tracks.len() as u16)
             .unwrap_or(self.base.len() as u16);
 
-        if self.cursor + count <= self.area.height - 1 && self.y_offset + self.cursor + count < total
+        if self.cursor + count <= self.area.height - 1
+            && self.y_offset + self.cursor + count < total
         {
             self.cursor += count;
         } else if self.y_offset + self.area.height < total {
@@ -377,6 +379,13 @@ impl Tracklist {
 
         Some(track)
     }
+
+    fn resize(&mut self, area: Rect) {
+        self.area = area;
+        if self.cursor > area.height - 1 {
+            self.cursor = area.height - 1;
+        }
+    }
 }
 
 impl Widget for &Tracklist {
@@ -387,7 +396,7 @@ impl Widget for &Tracklist {
         let w = area.width;
         let y = self.cursor + area.y;
         for x in 0..w {
-            buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
+            buf.cell_mut((x, y)).map(|c| c.set_fg(Color::Green));
         }
 
         let current = self.current_track.as_ref();
