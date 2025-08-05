@@ -11,19 +11,22 @@ use crate::{
     action::Action,
     app::Mode,
     model::{self, playlist::PlaylistMd},
-    widget::popup::{self, Popup},
+    widget::{
+        Component, gen_popup,
+        popup::{self, Popup},
+    },
 };
 
 pub struct Playlist {
     pub list: Vec<model::PlaylistMd>,
 
-    pub popup: Popup,
+    pub popup: gen_popup::Popup<Popup>,
     pub selected_track: Option<model::Track>,
 
     pub focused_widget: Focus,
 
     pub cursor: u16,
-    pub show_cursor: bool,
+    // pub show_cursor: bool,
 
     pub y_offset: u16,
 
@@ -73,49 +76,63 @@ impl Playlist {
         let list = PlaylistMd::get_all(conn);
         Playlist {
             list,
-            popup: Popup::new(),
+            popup: gen_popup::Popup::new(Popup::new(
+                area.centered_vertically(ratatui::layout::Constraint::Length(3)),
+            )),
             focused_widget: Focus::Parent,
             selected_track: None,
             cursor: 0,
-            show_cursor: true,
+            // show_cursor: true,
             y_offset: 0,
             area,
         }
     }
 
-    pub fn handle_input(&self, code: KeyCode, mods: KeyModifiers) -> Option<Message> {
-        match self.focused_widget {
-            Focus::Parent => {
-                let message = match code {
-                    KeyCode::Enter => {
-                        if self.selected_track.is_some() {
-                            Message::AddSelectedToPlaylist
-                        } else {
-                            Message::SelectPlaylist
-                        }
-                    }
-                    KeyCode::Char('j') => Message::CursorDown(1),
-                    KeyCode::Char('k') => Message::CursorUp(1),
-                    KeyCode::Char('p') => Message::FocusTracklist,
-                    KeyCode::Char('d') => Message::DeletePlaylist,
-                    KeyCode::Char('c') => Message::OpenPopup,
-                    _ => return None,
-                };
+    fn get_under_cursor(&self) -> Option<model::PlaylistMd> {
+        let index = (self.cursor + self.y_offset) as usize;
 
-                Some(message)
-            }
-            Focus::Popup => {
-                let message = match code {
-                    KeyCode::End => Message::CreatePlaylist,
-                    _ => self.popup.handle_input(code, mods).map(Message::Popup)?,
-                };
+        self.list.get(index).cloned()
+    }
 
-                Some(message)
-            }
+    fn cursor_up(&mut self, count: u16) {
+        if self.cursor < count {
+            let rest = count - self.cursor;
+            self.y_offset = self.y_offset.saturating_sub(rest);
+            self.cursor = 0;
+        } else {
+            self.cursor -= count;
         }
     }
 
-    pub fn update(&mut self, message: Message) -> Action<Instruction, Message> {
+    fn cursor_down(&mut self, count: u16) {
+        let total = self.list.len() as u16;
+
+        if self.cursor + count <= self.area.height - 1
+            && self.y_offset + self.cursor + count < total
+        {
+            self.cursor += count;
+        } else if self.y_offset + self.area.height - 1 < total {
+            self.y_offset += 1;
+        }
+    }
+}
+
+impl Component for Playlist {
+    type Message = Message;
+    type Output = Action<Instruction, Message>;
+
+    fn area(&self) -> Rect {
+        self.area
+    }
+
+    fn resize(&mut self, area: Rect) {
+        self.area = area;
+        if self.cursor > area.height - 1 {
+            self.cursor = area.height - 1;
+        }
+    }
+
+    fn update(&mut self, message: Self::Message) -> Self::Output {
         match message {
             Message::Popup(message) => {
                 let mut action = Action::none();
@@ -167,11 +184,13 @@ impl Playlist {
             }
             Message::CreatePlaylist => {
                 self.focused_widget = Focus::Parent;
+                self.popup.hide();
                 let name = std::mem::take(&mut self.popup.buffer);
                 Action::instruction(Instruction::CreatePlaylist(name))
             }
             Message::OpenPopup => {
                 self.focused_widget = Focus::Popup;
+                self.popup.show();
                 Action::instruction(Instruction::SetMode(Mode::Write))
             }
 
@@ -191,47 +210,44 @@ impl Playlist {
         }
     }
 
-    fn get_under_cursor(&self) -> Option<model::PlaylistMd> {
-        let index = (self.cursor + self.y_offset) as usize;
+    fn handle_input(&self, code: KeyCode, mods: KeyModifiers) -> Option<Message> {
+        match self.focused_widget {
+            Focus::Parent => {
+                let message = match code {
+                    KeyCode::Enter => {
+                        if self.selected_track.is_some() {
+                            Message::AddSelectedToPlaylist
+                        } else {
+                            Message::SelectPlaylist
+                        }
+                    }
+                    KeyCode::Char('j') => Message::CursorDown(1),
+                    KeyCode::Char('k') => Message::CursorUp(1),
+                    KeyCode::Char('p') => Message::FocusTracklist,
+                    KeyCode::Char('d') => Message::DeletePlaylist,
+                    KeyCode::Char('c') => Message::OpenPopup,
+                    _ => return None,
+                };
 
-        self.list.get(index).cloned()
-    }
+                Some(message)
+            }
+            Focus::Popup => {
+                let message = match code {
+                    KeyCode::End => Message::CreatePlaylist,
+                    _ => self.popup.handle_input(code, mods).map(Message::Popup)?,
+                };
 
-    fn cursor_up(&mut self, count: u16) {
-        if self.cursor < count {
-            let rest = count - self.cursor;
-            self.y_offset = self.y_offset.saturating_sub(rest);
-            self.cursor = 0;
-        } else {
-            self.cursor -= count;
+                Some(message)
+            }
         }
     }
 
-    fn cursor_down(&mut self, count: u16) {
-        let total = self.list.len() as u16;
-
-        if self.cursor + count <= self.area.height - 1
-            && self.y_offset + self.cursor + count < total
-        {
-            self.cursor += count;
-        } else if self.y_offset + self.area.height - 1 < total {
-            self.y_offset += 1;
-        }
-    }
-
-    fn resize(&mut self, area: Rect) {
-        self.area = area;
-        if self.cursor > area.height - 1 {
-            self.cursor = area.height - 1;
-        }
-    }
-}
-
-impl Widget for &Playlist {
-    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
+    fn view(&self, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
     {
+        let area = self.area();
+
         if self.list.is_empty() && matches!(self.focused_widget, Focus::Parent) {
             let mut center_area = area;
             center_area.y = (area.y + area.height / 2) - 1;
@@ -259,22 +275,17 @@ impl Widget for &Playlist {
         let w = area.width;
         let y = self.cursor + area.y;
 
-        for x in 0..w {
-            buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
-        }
-
         list.render(area, buf);
 
         match &self.focused_widget {
             Focus::Popup => {
-                let h = 3;
-                let w = self.area.width;
-                let x = self.area.x;
-                let y = self.area.height / 2 - 2 + self.area.y;
-                let area = Rect::new(x, y, w, h);
-                self.popup.render(area, buf);
+                self.popup.view(buf);
             }
-            Focus::Parent => {}
+            Focus::Parent => {
+                for x in 0..w {
+                    buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
+                }
+            }
         }
     }
 }

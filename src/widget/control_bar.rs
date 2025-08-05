@@ -11,6 +11,7 @@ use ratatui::{
 use crate::{
     action::Action,
     app::{Repeat, Shuffle},
+    widget::Component,
 };
 
 #[derive(Debug)]
@@ -35,6 +36,7 @@ pub struct ControlBar {
     pub pause_pos: Range<u16>,
     pub seek_forward_pos: Range<u16>,
     pub repeat_pos: Range<u16>,
+    pub area: Rect,
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +69,9 @@ pub enum Message {
 impl ControlBar {
     pub const HEIGHT: u16 = 4;
 
-    pub fn new(area: Rect, progress: f32, shuffle: Shuffle, repeat: Repeat) -> Self {
+    pub fn new(full_area: Rect, progress: f32, shuffle: Shuffle, repeat: Repeat) -> Self {
+        debug_assert_eq!(full_area.height, Self::HEIGHT);
+
         let [_, _, _, button_area] = Layout::new(
             Direction::Vertical,
             [
@@ -77,7 +81,7 @@ impl ControlBar {
                 Constraint::Length(1),
             ],
         )
-        .areas(area);
+        .areas(full_area);
 
         let [_, area, _] = Layout::new(
             Direction::Horizontal,
@@ -114,43 +118,55 @@ impl ControlBar {
             pause_pos,
             seek_forward_pos,
             repeat_pos,
+            area: full_area,
         }
     }
+}
 
-    #[allow(clippy::single_match)]
-    pub fn handle_mouse(&self, ev: MouseEvent) -> Option<Message> {
-        let x = ev.column;
+impl Component for ControlBar {
+    type Message = Message;
+    type Output = Action<Instruction, Message>;
 
-        match ev.kind {
-            MouseEventKind::Down(_button) => {
-                if self.repeat_pos.contains(&x) {
-                    return Some(Message::ToggleRepeat);
-                }
-
-                if self.seek_backward_pos.contains(&x) {
-                    return Some(Message::SeekBackward(Duration::from_secs(5)));
-                }
-
-                if self.shuffle_pos.contains(&x) {
-                    return Some(Message::ToggleShuffle);
-                }
-
-                if self.seek_forward_pos.contains(&x) {
-                    return Some(Message::SeekForward(Duration::from_secs(5)));
-                }
-
-                if self.pause_pos.contains(&x) {
-                    eprintln!("??");
-                    return Some(Message::TogglePause);
-                }
-            }
-            _ => {}
-        }
-
-        None
+    fn area(&self) -> Rect {
+        self.area
     }
 
-    pub fn update(&mut self, message: Message) -> Action<Instruction, Message> {
+    fn resize(&mut self, full_area: Rect) {
+        debug_assert_eq!(full_area.height, Self::HEIGHT);
+        let [_, _, _, button_area] = Layout::new(
+            Direction::Vertical,
+            [
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ],
+        )
+        .areas(full_area);
+
+        let [_, area, _] = Layout::new(
+            Direction::Horizontal,
+            [
+                Constraint::Fill(1),
+                Constraint::Length(19),
+                Constraint::Fill(1),
+            ],
+        )
+        .areas(button_area);
+
+        let start = area.x;
+
+        // bruh...
+        self.control_bar_y = area.y;
+        self.shuffle_pos = start..start + 3;
+        self.seek_backward_pos = start + 4..start + 7;
+        self.pause_pos = start + 8..start + 11;
+        self.seek_forward_pos = start + 12..start + 15;
+        self.repeat_pos = start + 16..start + 19;
+        self.area = full_area;
+    }
+
+    fn update(&mut self, message: Self::Message) -> Self::Output {
         match message {
             Message::SetProgress(progress) => {
                 self.progress = progress;
@@ -194,43 +210,42 @@ impl ControlBar {
         Action::none()
     }
 
-    fn resize(&mut self, area: Rect) {
-        let [_, _, _, button_area] = Layout::new(
-            Direction::Vertical,
-            [
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-            ],
-        )
-        .areas(area);
+    #[allow(clippy::single_match)]
+    fn handle_mouse(&self, ev: MouseEvent) -> Option<Message> {
+        let x = ev.column;
 
-        let [_, area, _] = Layout::new(
-            Direction::Horizontal,
-            [
-                Constraint::Fill(1),
-                Constraint::Length(19),
-                Constraint::Fill(1),
-            ],
-        )
-        .areas(button_area);
+        match ev.kind {
+            MouseEventKind::Down(_button) => {
+                if self.repeat_pos.contains(&x) {
+                    return Some(Message::ToggleRepeat);
+                }
 
-        let start = area.x;
+                if self.seek_backward_pos.contains(&x) {
+                    return Some(Message::SeekBackward(Duration::from_secs(5)));
+                }
 
-        // bruh...
-        self.control_bar_y = area.y;
-        self.shuffle_pos = start..start + 3;
-        self.seek_backward_pos = start + 4..start + 7;
-        self.pause_pos = start + 8..start + 11;
-        self.seek_forward_pos = start + 12..start + 15;
-        self.repeat_pos = start + 16..start + 19;
+                if self.shuffle_pos.contains(&x) {
+                    return Some(Message::ToggleShuffle);
+                }
+
+                if self.seek_forward_pos.contains(&x) {
+                    return Some(Message::SeekForward(Duration::from_secs(5)));
+                }
+
+                if self.pause_pos.contains(&x) {
+                    eprintln!("??");
+                    return Some(Message::TogglePause);
+                }
+            }
+            _ => {}
+        }
+
+        None
     }
-}
 
-impl Widget for &ControlBar {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        debug_assert!(area.height == 4);
+    fn view(&self, buf: &mut Buffer) {
+        let area = self.area;
+        debug_assert_eq!(area.height, Self::HEIGHT);
 
         let block = Block::new().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT);
         let inner_area = block.inner(area);

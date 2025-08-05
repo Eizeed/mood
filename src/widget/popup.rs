@@ -1,13 +1,15 @@
 use ratatui::{
     crossterm::event::{KeyCode, KeyModifiers},
+    layout::Rect,
     text::Text,
     widgets::{Block, Paragraph, Widget},
 };
 
-use crate::task::Task;
+use crate::{task::Task, widget::Component};
 
 pub struct Popup {
     pub buffer: String,
+    area: Rect,
 }
 
 #[derive(Clone, Debug)]
@@ -17,21 +19,27 @@ pub enum Message {
 }
 
 impl Popup {
-    pub fn new() -> Self {
+    pub fn new(area: Rect) -> Self {
         Popup {
             buffer: String::new(),
+            area,
         }
     }
 
-    pub fn handle_input(&self, code: KeyCode, _mods: KeyModifiers) -> Option<Message> {
-        match code {
-            KeyCode::Char(ch) => Some(Message::Push(ch)),
-            KeyCode::Backspace => Some(Message::Pop),
-            _ => None,
-        }
+}
+
+impl Component for Popup {
+    type Message = Message;
+    type Output = Task<Message>;
+    fn area(&self) -> Rect {
+        self.area
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    fn resize(&mut self, area: Rect) {
+        self.area = area;
+    }
+
+    fn update(&mut self, message: Self::Message) -> Self::Output {
         match message {
             Message::Push(ch) => self.buffer.push(ch),
             Message::Pop => {
@@ -41,21 +49,21 @@ impl Popup {
 
         Task::none()
     }
-}
 
-impl Default for Popup {
-    fn default() -> Self {
-        Self::new()
+    fn handle_input(&self, code: KeyCode, _mods: KeyModifiers) -> Option<Message> {
+        match code {
+            KeyCode::Char(ch) => Some(Message::Push(ch)),
+            KeyCode::Backspace => Some(Message::Pop),
+            _ => None,
+        }
     }
-}
-
-impl Widget for &Popup {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    
+    fn view(&self, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
     {
         Paragraph::new(Text::raw(&self.buffer))
             .block(Block::bordered())
-            .render(area, buf);
+            .render(self.area, buf);
     }
 }

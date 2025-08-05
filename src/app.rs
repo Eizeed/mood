@@ -24,11 +24,12 @@ use rusqlite::Connection;
 use crate::{
     config::Config,
     input::spawn_input,
-    io::{add_uuid_metadata, get_config, get_files, save_config},
+    io::{add_metadata, get_config, get_files, save_config},
     model::{self, PlaylistMd, track::Track},
     music::{self, Command, spawn_music},
     task::Task,
     widget::{
+        Component,
         control_bar::{self, ControlBar},
         header::Header,
         playlist::{self, Playlist},
@@ -144,7 +145,7 @@ impl Player {
 
         let paths = get_files(config.audio_dir_path, "mp3");
 
-        let tracks: Rc<[Track]> = add_uuid_metadata(paths).into();
+        let tracks: Rc<[Track]> = add_metadata(paths).into();
 
         let [header_area, playlist_area, control_area] = Layout::new(
             Direction::Vertical,
@@ -500,7 +501,6 @@ impl Player {
                 use tracklist::Instruction;
 
                 match instruction {
-                    Instruction::Exit => self.should_exit = true,
                     Instruction::Play(track) => {
                         let file = std::fs::File::open(&track.path).unwrap();
                         let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
@@ -616,27 +616,17 @@ impl Player {
 }
 
 impl Widget for &Player {
-    fn render(self, area: Rect, buf: &mut Buffer)
+    fn render(self, _area: Rect, buf: &mut Buffer)
     where
         Self: Sized,
     {
-        let [header_area, main_area, control_area] = Layout::new(
-            Direction::Vertical,
-            [
-                Constraint::Length(Header::HEIGHT),
-                Constraint::Fill(1),
-                Constraint::Length(ControlBar::HEIGHT),
-            ],
-        )
-        .areas(area);
-
-        self.header.render(header_area, buf);
+        self.header.view(buf);
 
         match self.focused_widget {
-            Focus::Tracklist => self.tracklist.render(main_area, buf),
-            Focus::Playlist => self.playlist.render(main_area, buf),
+            Focus::Tracklist => self.tracklist.view(buf),
+            Focus::Playlist => self.playlist.view(buf),
         }
 
-        self.control_bar.render(control_area, buf);
+        self.control_bar.view(buf);
     }
 }

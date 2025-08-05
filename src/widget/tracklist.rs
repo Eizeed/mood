@@ -17,6 +17,7 @@ use crate::{
     action::Action,
     app::{Repeat, Shuffle},
     model,
+    widget::Component,
 };
 
 #[derive(Debug)]
@@ -40,7 +41,7 @@ pub struct Tracklist {
     pub start_timer: Instant,
 
     pub cursor: u16,
-    pub show_cursor: bool,
+    // pub show_cursor: bool,
 
     pub y_offset: u16,
 
@@ -54,7 +55,6 @@ pub enum Instruction {
     AddToPlaylist(model::Track),
     RemoveFromPlaylist(model::Playlist, model::Track),
     SetHeader(String),
-    Exit,
 }
 
 #[derive(Debug, Clone)]
@@ -99,7 +99,7 @@ impl Tracklist {
             shuffle,
             repeat,
             cursor: 0,
-            show_cursor: true,
+            // show_cursor: true,
             y_offset: 0,
             area,
         }
@@ -123,7 +123,150 @@ impl Tracklist {
         Some(message)
     }
 
-    pub fn update(&mut self, message: Message) -> Action<Instruction, Message> {
+    pub fn get_current(&self) -> Option<model::Track> {
+        self.current_track.clone()
+    }
+
+    fn get_under_cursor(&self) -> Option<model::Track> {
+        let index = (self.cursor + self.y_offset) as usize;
+
+        match &self.selected_playlist {
+            Some(playlist) => playlist.tracks.get(index).cloned(),
+            None => self.base.get(index).cloned(),
+        }
+    }
+
+    fn cursor_up(&mut self, count: u16) {
+        if self.cursor < count {
+            let rest = count - self.cursor;
+            self.y_offset = self.y_offset.saturating_sub(rest);
+            self.cursor = 0;
+        } else {
+            self.cursor -= count;
+        }
+    }
+
+    fn cursor_down(&mut self, count: u16) {
+        let total = self
+            .selected_playlist
+            .as_ref()
+            .map(|playlist| playlist.tracks.len() as u16)
+            .unwrap_or(self.base.len() as u16);
+
+        if self.cursor + count <= self.area.height - 1
+            && self.y_offset + self.cursor + count < total
+        {
+            self.cursor += count;
+        } else if self.y_offset + self.area.height < total {
+            self.y_offset += 1;
+        }
+    }
+
+    fn set_auto_queue(&mut self, index: usize) {
+        let index = match self.shuffle {
+            Shuffle::Random => {
+                self.list = self.base.to_vec();
+
+                self.list.swap(index, 0);
+                self.list[1..].shuffle(&mut rand::rng());
+                0
+            }
+            _ => {
+                self.list = self.base.to_vec();
+                index
+            }
+        };
+
+        let mut list = self.list.clone();
+
+        let after = list.split_off(index);
+
+        self.history = list;
+        self.auto_queue = after.into();
+    }
+
+    fn get_next(&mut self) -> Option<model::Track> {
+        let track = if self.manual_queue.is_empty() {
+            match self.repeat {
+                Repeat::None => {
+                    let track = self.auto_queue.pop_front()?;
+                    let current = self.current_track.take()?;
+
+                    if self.from_auto {
+                        self.history.push(current);
+                    }
+                    self.from_auto = true;
+
+                    track
+                }
+                Repeat::Queue | Repeat::One => {
+                    let current = self.current_track.take()?;
+                    if self.from_auto {
+                        self.history.push(current);
+                    }
+                    self.from_auto = true;
+
+                    let track = match self.auto_queue.pop_front() {
+                        Some(track) => track,
+                        None => {
+                            self.auto_queue = self.list.clone().into();
+
+                            self.auto_queue.pop_front().unwrap()
+                        }
+                    };
+
+                    self.from_auto = true;
+                    track
+                }
+            }
+        } else {
+            if self.from_auto {
+                if let Some(current_track) = self.current_track.take() {
+                    self.history.push(current_track)
+                };
+            }
+
+            self.from_auto = false;
+            self.manual_queue.pop_front().unwrap()
+        };
+
+        Some(track)
+    }
+
+    pub fn get_prev(&mut self) -> Option<model::Track> {
+        if self.history.is_empty() {
+            return None;
+        }
+
+        if self.from_auto {
+            let current = self.current_track.take()?;
+            self.auto_queue.push_front(current);
+        }
+
+        self.from_auto = true;
+
+        let track = self.history.pop().unwrap();
+
+        Some(track)
+    }
+}
+
+impl Component for Tracklist {
+    type Message = Message;
+    type Output = Action<Instruction, Message>;
+
+    fn area(&self) -> Rect {
+        self.area
+    }
+
+    fn resize(&mut self, area: Rect) {
+        self.area = area;
+        if self.cursor > area.height - 1 {
+            self.cursor = area.height - 1;
+        }
+    }
+
+    fn update(&mut self, message: Self::Message) -> Self::Output {
         match message {
             Message::GetNext => {
                 if self.start_timer.elapsed() < Duration::from_millis(50) {
@@ -257,146 +400,11 @@ impl Tracklist {
         }
     }
 
-    pub fn get_current(&self) -> Option<model::Track> {
-        self.current_track.clone()
-    }
-
-    fn get_under_cursor(&self) -> Option<model::Track> {
-        let index = (self.cursor + self.y_offset) as usize;
-
-        match &self.selected_playlist {
-            Some(playlist) => playlist.tracks.get(index).cloned(),
-            None => self.base.get(index).cloned(),
-        }
-    }
-
-    fn cursor_up(&mut self, count: u16) {
-        if self.cursor < count {
-            let rest = count - self.cursor;
-            self.y_offset = self.y_offset.saturating_sub(rest);
-            self.cursor = 0;
-        } else {
-            self.cursor -= count;
-        }
-    }
-
-    fn cursor_down(&mut self, count: u16) {
-        let total = self
-            .selected_playlist
-            .as_ref()
-            .map(|playlist| playlist.tracks.len() as u16)
-            .unwrap_or(self.base.len() as u16);
-
-        if self.cursor + count <= self.area.height - 1
-            && self.y_offset + self.cursor + count < total
-        {
-            self.cursor += count;
-        } else if self.y_offset + self.area.height < total {
-            self.y_offset += 1;
-        }
-    }
-
-    fn set_auto_queue(&mut self, index: usize) {
-        let index = match self.shuffle {
-            Shuffle::Random => {
-                self.list = self.base.to_vec();
-
-                self.list.swap(index, 0);
-                self.list[1..].shuffle(&mut rand::rng());
-                0
-            }
-            _ => {
-                self.list = self.base.to_vec();
-                index
-            }
-        };
-
-        let mut list = self.list.clone();
-
-        let after = list.split_off(index);
-
-        self.history = list;
-        self.auto_queue = after.into();
-    }
-
-    fn get_next(&mut self) -> Option<model::Track> {
-        let track = if self.manual_queue.is_empty() {
-            match self.repeat {
-                Repeat::None => {
-                    let track = self.auto_queue.pop_front()?;
-                    let current = self.current_track.take()?;
-
-                    if self.from_auto {
-                        self.history.push(current);
-                    }
-                    self.from_auto = true;
-
-                    track
-                }
-                Repeat::Queue | Repeat::One => {
-                    let current = self.current_track.take()?;
-                    if self.from_auto {
-                        self.history.push(current);
-                    }
-                    self.from_auto = true;
-
-                    let track = match self.auto_queue.pop_front() {
-                        Some(track) => track,
-                        None => {
-                            self.auto_queue = self.list.clone().into();
-
-                            self.auto_queue.pop_front().unwrap()
-                        }
-                    };
-
-                    self.from_auto = true;
-                    track
-                }
-            }
-        } else {
-            if self.from_auto {
-                if let Some(current_track) = self.current_track.take() {
-                    self.history.push(current_track)
-                };
-            }
-
-            self.from_auto = false;
-            self.manual_queue.pop_front().unwrap()
-        };
-
-        Some(track)
-    }
-
-    pub fn get_prev(&mut self) -> Option<model::Track> {
-        if self.history.is_empty() {
-            return None;
-        }
-
-        if self.from_auto {
-            let current = self.current_track.take()?;
-            self.auto_queue.push_front(current);
-        }
-
-        self.from_auto = true;
-
-        let track = self.history.pop().unwrap();
-
-        Some(track)
-    }
-
-    fn resize(&mut self, area: Rect) {
-        self.area = area;
-        if self.cursor > area.height - 1 {
-            self.cursor = area.height - 1;
-        }
-    }
-}
-
-impl Widget for &Tracklist {
-    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
+    fn view(&self, buffer: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
     {
+        let area = self.area();
         let list: &[model::Track] = self
             .selected_playlist
             .as_ref()
@@ -415,14 +423,14 @@ impl Widget for &Tracklist {
             Paragraph::new("No tracks")
                 .centered()
                 .block(Block::bordered())
-                .render(center_area, buf);
+                .render(center_area, buffer);
             return;
         }
 
         let w = area.width;
         let y = self.cursor + area.y;
         for x in 0..w {
-            buf.cell_mut((x, y)).map(|c| c.set_fg(Color::Green));
+            buffer.cell_mut((x, y)).map(|c| c.set_fg(Color::Green));
         }
 
         let current = self.current_track.as_ref();
@@ -467,6 +475,6 @@ impl Widget for &Tracklist {
             })),
         };
 
-        list.render(area, buf);
+        list.render(area, buffer);
     }
 }

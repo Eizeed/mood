@@ -128,7 +128,7 @@ pub fn save_config(config: Config) {
 }
 
 // Maybe this is bad, idk...
-pub fn add_uuid_metadata<T>(paths: Vec<T>) -> Vec<Track>
+pub fn add_metadata<T>(paths: Vec<T>) -> Vec<Track>
 where
     T: Into<PathBuf>,
 {

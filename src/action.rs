@@ -5,6 +5,7 @@ pub struct Action<I, Message> {
     pub message: Task<Message>,
 }
 
+#[allow(dead_code)]
 impl<I, Message> Action<I, Message> {
     pub fn none() -> Self {
         Self {

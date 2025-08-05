@@ -4,6 +4,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
+use crate::widget::Component;
+
 #[derive(Debug)]
 pub struct Header {
     pub playlist_name: String,
@@ -11,27 +13,30 @@ pub struct Header {
 }
 
 impl Header {
-    pub const HEIGHT: u16 = 2;
-
     pub fn new(playlist_name: String, area: Rect) -> Self {
         Header {
             playlist_name,
             area,
         }
     }
-
-    pub fn resize(&mut self, area: Rect) {
-        self.area = area;
-    }
 }
 
-impl Widget for &Header {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
+impl Component for Header {
+    type Output = ();
+    type Message = ();
+    fn area(&self) -> Rect {
+        self.area
+    }
+
+    fn resize(&mut self, area: Rect) {
+        self.area = area;
+    }
+
+    fn update(&mut self, _message: Self::Message) -> Self::Output {}
+
+    fn view(&self, buffer: &mut ratatui::prelude::Buffer) {
         Paragraph::new(Text::from(vec![Line::raw(self.playlist_name.as_str())]))
             .block(Block::new().borders(Borders::BOTTOM))
-            .render(area, buf);
+            .render(self.area, buffer);
     }
 }
