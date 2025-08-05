@@ -10,7 +10,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Stylize},
     text::{Line, Text},
-    widgets::Widget,
+    widgets::{Block, Paragraph, Widget},
 };
 
 use crate::{
@@ -156,6 +156,16 @@ impl Tracklist {
                     return Action::none();
                 }
 
+                if let Some(playlist) = &self.selected_playlist {
+                    self.base = playlist.tracks.clone().into();
+                } else {
+                    self.base = self.library.clone();
+                };
+
+                if self.base.len() == 0 {
+                    return Action::none();
+                }
+
                 self.set_auto_queue((self.cursor + self.y_offset) as usize);
                 let track = self.auto_queue.pop_front().unwrap();
 
@@ -287,12 +297,6 @@ impl Tracklist {
     }
 
     fn set_auto_queue(&mut self, index: usize) {
-        if let Some(playlist) = &self.selected_playlist {
-            self.base = playlist.tracks.clone().into();
-        } else {
-            self.base = self.library.clone();
-        };
-
         let index = match self.shuffle {
             Shuffle::Random => {
                 self.list = self.base.to_vec();
@@ -393,6 +397,28 @@ impl Widget for &Tracklist {
     where
         Self: Sized,
     {
+        let list: &[model::Track] = self
+            .selected_playlist
+            .as_ref()
+            .map(|playlist| &*playlist.tracks)
+            .unwrap_or(&*self.base);
+
+        if list.len() == 0 {
+            let mut center_area = area;
+            center_area.y = (area.y + area.height / 2) - 1;
+            center_area.height = 3;
+
+            let width = area.width / 3;
+            center_area.x = width;
+            center_area.width = width;
+
+            Paragraph::new("No tracks")
+                .centered()
+                .block(Block::bordered())
+                .render(center_area, buf);
+            return;
+        }
+
         let w = area.width;
         let y = self.cursor + area.y;
         for x in 0..w {
@@ -400,12 +426,6 @@ impl Widget for &Tracklist {
         }
 
         let current = self.current_track.as_ref();
-        let list: &[model::Track] = self
-            .selected_playlist
-            .as_ref()
-            .map(|playlist| &*playlist.tracks)
-            .unwrap_or(&*self.base);
-
         let list = match current {
             Some(current) => {
                 Text::from_iter(list.iter().skip(self.y_offset as usize).enumerate().map(

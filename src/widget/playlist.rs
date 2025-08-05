@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::Color,
     text::{Line, Text},
-    widgets::Widget,
+    widgets::{Block, Paragraph, Widget},
 };
 use rusqlite::Connection;
 
@@ -210,7 +210,8 @@ impl Playlist {
     fn cursor_down(&mut self, count: u16) {
         let total = self.list.len() as u16;
 
-        if self.cursor + count <= self.area.height - 1 && self.y_offset + self.cursor + count < total
+        if self.cursor + count <= self.area.height - 1
+            && self.y_offset + self.cursor + count < total
         {
             self.cursor += count;
         } else if self.y_offset + self.area.height - 1 < total {
@@ -231,11 +232,21 @@ impl Widget for &Playlist {
     where
         Self: Sized,
     {
-        let w = area.width;
-        let y = self.cursor + area.y;
+        if self.list.len() == 0 && matches!(self.focused_widget, Focus::Parent) {
+            let mut center_area = area;
+            center_area.y = (area.y + area.height / 2) - 1;
+            center_area.height = 3;
 
-        for x in 0..w {
-            buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
+            let width = area.width / 3;
+            center_area.x = width;
+            center_area.width = width;
+
+            Paragraph::new("No playlists")
+                .centered()
+                .block(Block::bordered())
+                .render(center_area, buf);
+
+            return;
         }
 
         let list = Text::from_iter(
@@ -244,6 +255,13 @@ impl Widget for &Playlist {
                 .skip(self.y_offset as usize)
                 .map(|t| Line::raw(&t.name)),
         );
+
+        let w = area.width;
+        let y = self.cursor + area.y;
+
+        for x in 0..w {
+            buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
+        }
 
         list.render(area, buf);
 
