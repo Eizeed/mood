@@ -263,6 +263,7 @@ impl Tracklist {
         if self.cursor < count {
             let rest = count - self.cursor;
             self.y_offset = self.y_offset.saturating_sub(rest);
+            self.cursor = 0;
         } else {
             self.cursor -= count;
         }
@@ -275,11 +276,10 @@ impl Tracklist {
             .map(|playlist| playlist.tracks.len() as u16)
             .unwrap_or(self.base.len() as u16);
 
-        if self.cursor + (count) < self.area.height
-            && self.y_offset + self.cursor + (count) < total
+        if self.cursor + count <= self.area.height - 1 && self.y_offset + self.cursor + count < total
         {
             self.cursor += count;
-        } else if self.y_offset + self.area.height - 1 < total - 1 {
+        } else if self.y_offset + self.area.height < total {
             self.y_offset += 1;
         }
     }

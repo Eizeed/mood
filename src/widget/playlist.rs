@@ -201,6 +201,7 @@ impl Playlist {
         if self.cursor < count {
             let rest = count - self.cursor;
             self.y_offset = self.y_offset.saturating_sub(rest);
+            self.cursor = 0;
         } else {
             self.cursor -= count;
         }
@@ -209,10 +210,10 @@ impl Playlist {
     fn cursor_down(&mut self, count: u16) {
         let total = self.list.len() as u16;
 
-        if self.cursor + count < self.area.height && self.y_offset + self.cursor + count < total
+        if self.cursor + count <= self.area.height - 1 && self.y_offset + self.cursor + count < total
         {
             self.cursor += count;
-        } else if self.y_offset + self.area.height - 1 < total - 1 {
+        } else if self.y_offset + self.area.height - 1 < total {
             self.y_offset += 1;
         }
     }

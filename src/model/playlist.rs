@@ -1,5 +1,5 @@
 use lofty::file::AudioFile;
-use rusqlite::{Connection, fallible_iterator::FallibleIterator};
+use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::model;
@@ -93,7 +93,7 @@ impl Playlist {
             .unwrap()
             .query([md.uuid.to_string()])
             .unwrap()
-            .map(|row| {
+            .mapped(|row| {
                 let track_uuid: Box<str> = row.get("track_uuid")?;
                 let uuid = Uuid::parse_str(&track_uuid).unwrap();
                 let path: String = row.get("track_path")?;
@@ -105,7 +105,7 @@ impl Playlist {
                     duration,
                 })
             })
-            .unwrap()
+            .filter_map(|t| t.ok())
             .collect();
 
         Playlist {
