@@ -1,6 +1,12 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    any::Any,
+    ops::{Deref, DerefMut},
+};
 
-use ratatui::layout::Rect;
+use ratatui::{
+    layout::Rect,
+    widgets::{Clear, Widget},
+};
 
 use crate::widget::Component;
 pub struct Popup<T>
@@ -70,6 +76,7 @@ impl<T: Component> Component for Popup<T> {
     }
 
     fn view(&self, buffer: &mut ratatui::prelude::Buffer) {
+        Clear::render(Clear, self.area(), buffer);
         if self.show {
             self.inner.view(buffer);
         }

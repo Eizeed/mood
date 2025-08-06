@@ -58,6 +58,7 @@ pub enum Message {
     DeletePlaylist,
     CreatePlaylist(String),
     OpenPopup,
+    ClosePopup,
 
     CursorDown(u16),
     CursorUp(u16),
@@ -123,16 +124,15 @@ impl Playlist {
 
     fn align_cursor(&mut self) {
         if !self.list.is_empty() && self.cursor + self.y_offset >= self.list.len() as u16 - 1 {
-                self.cursor = self.list.len() as u16 - self.y_offset - 1;
+            self.cursor = self.list.len() as u16 - self.y_offset - 1;
         }
     }
 
     fn perform(&mut self, instruction: PlaylistInstruction) -> Task<Message> {
-        eprintln!("Performing");
         match instruction {
             PlaylistInstruction::Popup(popup_inst) => match popup_inst {
                 popup::Instruction::Submit(name) => Task::new(Message::CreatePlaylist(name)),
-                popup::Instruction::Cancel => Task::none(),
+                popup::Instruction::Cancel => Task::new(Message::ClosePopup),
             },
         }
     }
@@ -209,7 +209,6 @@ impl Component for Playlist {
                 }
             }
             Message::CreatePlaylist(playlist_title) => {
-                eprintln!("Creating playlist");
                 self.focused_widget = Focus::Parent;
                 self.popup.hide();
 
@@ -219,6 +218,11 @@ impl Component for Playlist {
                 self.focused_widget = Focus::Popup;
                 self.popup.show();
                 Action::instruction(Instruction::SetMode(Mode::Write))
+            }
+            Message::ClosePopup => {
+                self.focused_widget = Focus::Parent;
+                self.popup.hide();
+                Action::instruction(Instruction::SetMode(Mode::Default))
             }
 
             Message::CursorDown(count) => {
@@ -232,6 +236,8 @@ impl Component for Playlist {
 
             Message::Resize(area) => {
                 self.resize(area);
+                self.popup
+                    .resize(area.centered_vertically(ratatui::layout::Constraint::Length(3)));
                 Action::none()
             }
         }
@@ -299,6 +305,9 @@ impl Component for Playlist {
         let w = area.width;
         let y = self.cursor + area.y;
 
+        for x in 0..w {
+            buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
+        }
         list.render(area, buf);
 
         match &self.focused_widget {
@@ -306,9 +315,6 @@ impl Component for Playlist {
                 self.popup.view(buf);
             }
             Focus::Parent => {
-                for x in 0..w {
-                    buf.cell_mut((x, y)).unwrap().set_fg(Color::Green);
-                }
             }
         }
     }
