@@ -195,12 +195,11 @@ impl Player {
             terminal
                 .draw(|f| self.render(f.area(), f.buffer_mut()))
                 .expect("failed to draw frame");
-            
+
             crossbeam_channel::select_biased! {
                 recv(self.input_rx) -> event => {
                     let event = event.unwrap();
                     if let Some(curr_message) = self.handle_event(event) {
-                        eprintln!("{curr_message:?}");
                         let task = self.update(curr_message);
                         self.handle_task(task, &mut task_queue);
                     }
@@ -252,7 +251,6 @@ impl Player {
     }
 
     fn handle_event(&self, ev: Event) -> Option<Message> {
-        eprintln!("Handle event");
         match ev {
             Event::Key(c) => {
                 if c.kind != KeyEventKind::Press {
@@ -300,21 +298,15 @@ impl Player {
 
                         if msg.is_none() {
                             match &self.focused_widget {
-                                Focus::Tracklist => {
-                                    let map = self
-                                        .tracklist
-                                        .handle_input(c.code, c.modifiers)
-                                        .map(Message::Tracklist);
-                                    map
-                                }
+                                Focus::Tracklist => self
+                                    .tracklist
+                                    .handle_input(c.code, c.modifiers)
+                                    .map(Message::Tracklist),
 
-                                Focus::Playlist => {
-                                    let map = self
-                                        .playlist
-                                        .handle_input(c.code, c.modifiers)
-                                        .map(Message::Playlist);
-                                    map
-                                }
+                                Focus::Playlist => self
+                                    .playlist
+                                    .handle_input(c.code, c.modifiers)
+                                    .map(Message::Playlist),
                             }
                         } else {
                             msg

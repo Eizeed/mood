@@ -1,7 +1,4 @@
-use std::{
-    any::Any,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 use ratatui::{
     layout::Rect,
