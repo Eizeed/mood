@@ -78,6 +78,7 @@ pub enum Message {
     GetNext,
 
     SetPlaylist(model::Playlist),
+    UpdatePlaylist(model::Playlist),
 
     Resize(Rect),
 }
@@ -158,6 +159,18 @@ impl Tracklist {
             self.cursor += count;
         } else if self.y_offset + self.area.height < total {
             self.y_offset += 1;
+        }
+    }
+
+    fn align_cursor(&mut self) {
+        let base = self
+            .selected_playlist
+            .as_ref()
+            .map(|p| &*p.tracks)
+            .unwrap_or(&*self.base);
+
+        if !base.is_empty() && self.cursor + self.y_offset >= base.len() as u16 - 1 {
+            self.cursor = base.len() as u16 - self.y_offset - 1;
         }
     }
 
@@ -389,6 +402,11 @@ impl Component for Tracklist {
                 self.selected_playlist = Some(playlist);
                 self.cursor = 0;
                 self.y_offset = 0;
+                Action::none()
+            }
+            Message::UpdatePlaylist(playlist) => {
+                self.selected_playlist = Some(playlist);
+                self.align_cursor();
                 Action::none()
             }
             Message::Resize(area) => {

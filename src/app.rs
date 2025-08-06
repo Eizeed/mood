@@ -522,7 +522,7 @@ impl Player {
                     }
                     Instruction::RemoveFromPlaylist(playlist, track) => {
                         let playlist = playlist.remove_track(track, &self.db_conn);
-                        return Task::new(Message::Tracklist(tracklist::Message::SetPlaylist(
+                        return Task::new(Message::Tracklist(tracklist::Message::UpdatePlaylist(
                             playlist,
                         )));
                     }
@@ -549,7 +549,13 @@ impl Player {
                         self.focused_widget = Focus::Tracklist;
                         // return Some(Message::Playlist(playlist::Message::SelectPlaylist));
                     }
-                    Instruction::DeletePlaylist(md) => md.delete(&self.db_conn),
+                    Instruction::DeletePlaylist(md) => {
+                        md.delete(&self.db_conn);
+                        let playlists = PlaylistMd::get_all(&self.db_conn);
+                        return Task::new(Message::Playlist(playlist::Message::SetPlaylists(
+                            playlists,
+                        )));
+                    }
                     Instruction::SetMode(mode) => self.mode = mode,
                     Instruction::CreatePlaylist(name) => {
                         match self.mode {

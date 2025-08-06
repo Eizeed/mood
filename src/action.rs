@@ -25,7 +25,7 @@ impl<I, Message> Action<I, Message> {
     pub fn task(task: Task<Message>) -> Self {
         Self {
             instruction: None,
-            task: task,
+            task,
         }
     }
 

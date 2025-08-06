@@ -121,6 +121,12 @@ impl Playlist {
         }
     }
 
+    fn align_cursor(&mut self) {
+        if !self.list.is_empty() && self.cursor + self.y_offset >= self.list.len() as u16 - 1 {
+                self.cursor = self.list.len() as u16 - self.y_offset - 1;
+        }
+    }
+
     fn perform(&mut self, instruction: PlaylistInstruction) -> Task<Message> {
         eprintln!("Performing");
         match instruction {
@@ -166,13 +172,8 @@ impl Component for Playlist {
             }
 
             Message::SetPlaylists(playlists) => {
-                if self.list.len() > playlists.len() {
-                    let diff = (self.list.len() - playlists.len()) as u16;
-                    let left = diff.saturating_sub(self.y_offset);
-                    self.y_offset = self.y_offset.saturating_sub(diff);
-                    self.cursor = self.cursor.saturating_sub(left);
-                }
                 self.list = playlists;
+                self.align_cursor();
                 Action::none()
             }
             Message::FocusTracklist => Action::instruction(Instruction::FocusTracklist),
