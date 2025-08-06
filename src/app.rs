@@ -416,7 +416,7 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Task::batch(vec![action.message, instruction_message]);
+                return Task::batch(vec![action.task, instruction_message]);
             }
             Message::SetVolume(vol) => self.volume = vol,
             Message::PlayNext => {
@@ -428,10 +428,10 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Task::batch(vec![action.message, instruction_message]);
+                return Task::batch(vec![action.task, instruction_message]);
             }
             Message::Resize(area) => {
-                let [header_area, playlist_area, control_area] = Layout::new(
+                let [header_area, main_area, control_area] = Layout::new(
                     Direction::Vertical,
                     [
                         Constraint::Length(2),
@@ -444,10 +444,8 @@ impl Player {
                 self.header.resize(header_area);
 
                 // Handle resizing messages later
-                self.tracklist
-                    .update(tracklist::Message::Resize(playlist_area));
-                self.playlist
-                    .update(playlist::Message::Resize(playlist_area));
+                self.tracklist.update(tracklist::Message::Resize(main_area));
+                self.playlist.update(playlist::Message::Resize(main_area));
                 self.control_bar
                     .update(control_bar::Message::Resize(control_area));
             }
@@ -462,7 +460,7 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Task::batch(vec![instruction_message, action.message]);
+                return Task::batch(vec![instruction_message, action.task]);
             }
             Message::Playlist(message) => {
                 let action = self
@@ -473,7 +471,7 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Task::batch(vec![instruction_message, action.message]);
+                return Task::batch(vec![instruction_message, action.task]);
             }
             Message::ControlBar(message) => {
                 let action = self
@@ -484,7 +482,7 @@ impl Player {
 
                 let instruction_message = self.perform(action.instruction);
 
-                return Task::batch(vec![action.message, instruction_message]);
+                return Task::batch(vec![action.task, instruction_message]);
             }
         }
 

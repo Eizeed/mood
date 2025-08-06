@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Task<M> {
     messages: Option<Vec<M>>,
 }
@@ -25,6 +26,15 @@ impl<M> Task<M> {
 
         Self {
             messages: Some(tasks),
+        }
+    }
+
+    pub fn extend(mut self, new_task: Task<M>) -> Self {
+        if let Some(messages) = &mut self.messages {
+            messages.extend(new_task.messages.unwrap_or_default());
+            self
+        } else {
+            new_task
         }
     }
 

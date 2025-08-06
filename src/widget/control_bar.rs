@@ -233,7 +233,6 @@ impl Component for ControlBar {
                 }
 
                 if self.pause_pos.contains(&x) {
-                    eprintln!("??");
                     return Some(Message::TogglePause);
                 }
             }

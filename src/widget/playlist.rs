@@ -11,6 +11,7 @@ use crate::{
     action::Action,
     app::Mode,
     model::{self, playlist::PlaylistMd},
+    task::Task,
     widget::{
         Component, gen_popup,
         popup::{self, Popup},
@@ -27,7 +28,6 @@ pub struct Playlist {
 
     pub cursor: u16,
     // pub show_cursor: bool,
-
     pub y_offset: u16,
 
     pub area: Rect,
@@ -56,7 +56,7 @@ pub enum Message {
     SetTrack(model::Track),
     AddSelectedToPlaylist,
     DeletePlaylist,
-    CreatePlaylist,
+    CreatePlaylist(String),
     OpenPopup,
 
     CursorDown(u16),
@@ -69,6 +69,11 @@ pub enum Message {
 pub enum Focus {
     Parent,
     Popup,
+}
+
+#[derive(Debug, Clone)]
+enum PlaylistInstruction {
+    Popup(popup::Instruction),
 }
 
 impl Playlist {
@@ -115,6 +120,16 @@ impl Playlist {
             self.y_offset += 1;
         }
     }
+
+    fn perform(&mut self, instruction: PlaylistInstruction) -> Task<Message> {
+        eprintln!("Performing");
+        match instruction {
+            PlaylistInstruction::Popup(popup_inst) => match popup_inst {
+                popup::Instruction::Submit(name) => Task::new(Message::CreatePlaylist(name)),
+                popup::Instruction::Cancel => Task::none(),
+            },
+        }
+    }
 }
 
 impl Component for Playlist {
@@ -135,9 +150,19 @@ impl Component for Playlist {
     fn update(&mut self, message: Self::Message) -> Self::Output {
         match message {
             Message::Popup(message) => {
-                let mut action = Action::none();
-                action.message = self.popup.update(message).map(Message::Popup);
-                action
+                let action = self
+                    .popup
+                    .update(message)
+                    .map(Message::Popup)
+                    .map_instruction(PlaylistInstruction::Popup);
+
+                let task = if let Some(instruction) = action.instruction {
+                    self.perform(instruction)
+                } else {
+                    Task::none()
+                };
+
+                Action::task(action.task.extend(task))
             }
 
             Message::SetPlaylists(playlists) => {
@@ -182,11 +207,12 @@ impl Component for Playlist {
                     Action::none()
                 }
             }
-            Message::CreatePlaylist => {
+            Message::CreatePlaylist(playlist_title) => {
+                eprintln!("Creating playlist");
                 self.focused_widget = Focus::Parent;
                 self.popup.hide();
-                let name = std::mem::take(&mut self.popup.buffer);
-                Action::instruction(Instruction::CreatePlaylist(name))
+
+                Action::instruction(Instruction::CreatePlaylist(playlist_title))
             }
             Message::OpenPopup => {
                 self.focused_widget = Focus::Popup;
@@ -232,10 +258,7 @@ impl Component for Playlist {
                 Some(message)
             }
             Focus::Popup => {
-                let message = match code {
-                    KeyCode::End => Message::CreatePlaylist,
-                    _ => self.popup.handle_input(code, mods).map(Message::Popup)?,
-                };
+                let message = self.popup.handle_input(code, mods).map(Message::Popup)?;
 
                 Some(message)
             }

@@ -7,7 +7,7 @@ use std::{
 use rand::seq::SliceRandom;
 use ratatui::{
     crossterm::event::{KeyCode, KeyModifiers},
-    layout::Rect,
+    layout::{Constraint, Rect},
     style::{Color, Stylize},
     text::{Line, Text},
     widgets::{Block, Paragraph, Widget},
@@ -42,7 +42,6 @@ pub struct Tracklist {
 
     pub cursor: u16,
     // pub show_cursor: bool,
-
     pub y_offset: u16,
 
     pub area: Rect,
@@ -412,18 +411,12 @@ impl Component for Tracklist {
             .unwrap_or(&*self.base);
 
         if list.is_empty() {
-            let mut center_area = area;
-            center_area.y = (area.y + area.height / 2) - 1;
-            center_area.height = 3;
-
-            let width = area.width / 3;
-            center_area.x = width;
-            center_area.width = width;
+            let area = area.centered(Constraint::Percentage(40), Constraint::Length(3));
 
             Paragraph::new("No tracks")
                 .centered()
                 .block(Block::bordered())
-                .render(center_area, buffer);
+                .render(area, buffer);
             return;
         }
 
