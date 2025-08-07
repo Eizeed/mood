@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Paragraph, Widget},
 };
 
-use crate::{action::Action, widget::Component};
+use crate::{action::Action, component::Component};
 
 pub struct NewPlaylistInput {
     pub buffer: String,

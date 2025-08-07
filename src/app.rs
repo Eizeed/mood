@@ -28,7 +28,7 @@ use crate::{
     model::{self, PlaylistMd, track::Track},
     music::{self, Command, spawn_music},
     task::Task,
-    widget::{
+    component::{
         Component,
         control_bar::{self, ControlBar},
         header::Header,

@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Clear, Widget},
 };
 
-use crate::widget::Component;
+use crate::component::Component;
 
 pub struct Popup<T>
 where

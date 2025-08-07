@@ -4,7 +4,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
-use crate::widget::Component;
+use crate::component::Component;
 
 #[derive(Debug)]
 pub struct Header {

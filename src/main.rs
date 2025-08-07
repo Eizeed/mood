@@ -12,7 +12,7 @@ mod io;
 mod model;
 mod music;
 mod task;
-mod widget;
+mod component;
 
 fn main() {
     set_panic_hook();

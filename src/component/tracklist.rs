@@ -17,7 +17,7 @@ use crate::{
     action::Action,
     app::{Repeat, Shuffle},
     model,
-    widget::Component,
+    component::Component,
 };
 
 #[derive(Debug)]

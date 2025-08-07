@@ -12,7 +12,7 @@ use crate::{
     app::Mode,
     model::{self, playlist::PlaylistMd},
     task::Task,
-    widget::{
+    component::{
         Component,
         gen_popup::{self, Popup},
         new_playlist_input::{self, NewPlaylistInput},

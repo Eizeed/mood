@@ -11,7 +11,7 @@ use ratatui::{
 use crate::{
     action::Action,
     app::{Repeat, Shuffle},
-    widget::Component,
+    component::Component,
 };
 
 #[derive(Debug)]
