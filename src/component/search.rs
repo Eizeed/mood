@@ -69,7 +69,7 @@ where
         .areas(inner_area);
 
         let search = Paragraph::new(&*self.pattern).block(Block::bordered());
-        let content = Paragraph::new(if self.pattern == "" {
+        let content = Paragraph::new(if self.pattern.is_empty() {
             Text::from_iter(self.list.iter().map(|item| Line::raw(item.name())))
         } else {
             Text::from_iter(

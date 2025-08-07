@@ -432,7 +432,7 @@ impl Player {
                 return Task::batch(vec![action.task, instruction_message]);
             }
             Message::Resize(area) => {
-                if area.width < 21 {
+                if area.width < 21 || area.height < 16 {
                     self.fallback_render = true;
                 } else {
                     self.fallback_render = false;
