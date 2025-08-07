@@ -3,7 +3,7 @@ use std::{borrow::Cow, rc::Rc};
 use ratatui::{
     layout::{Constraint, Direction, HorizontalAlignment, Layout, Rect},
     text::{Line, Text},
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Block, Padding, Paragraph, Widget},
 };
 
 use crate::{component::Component, task::Task};
@@ -56,6 +56,7 @@ where
 
     fn view(&self, buffer: &mut ratatui::prelude::Buffer) {
         let outer = Block::bordered()
+            .padding(Padding::horizontal(1))
             .title("Search")
             .title_alignment(HorizontalAlignment::Center);
 

@@ -96,7 +96,7 @@ impl Tracklist {
 
             search: Popup::new(Search::new(
                 tracks.clone(),
-                area.centered(Constraint::Percentage(75), Constraint::Percentage(75)),
+                area.centered(Constraint::Percentage(90), Constraint::Percentage(90)),
             )),
 
             list: tracks.to_vec(),
@@ -312,6 +312,8 @@ impl Component for Tracklist {
             }
             Message::SetBaseQueue => {
                 self.base = self.library.clone();
+                self.cursor = 0;
+                self.y_offset = 0;
                 self.selected_playlist = None;
                 Action::instruction(Instruction::SetHeader("".to_string()))
             }
@@ -437,7 +439,8 @@ impl Component for Tracklist {
             }
             Message::Resize(area) => {
                 self.resize(area);
-                self.search.resize(area.centered(Constraint::Percentage(75), Constraint::Percentage(75)));
+                self.search
+                    .resize(area.centered(Constraint::Percentage(90), Constraint::Percentage(90)));
 
                 Action::none()
             }
