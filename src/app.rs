@@ -22,19 +22,20 @@ use ratatui::{
 use rusqlite::Connection;
 
 use crate::{
+    component::{
+        Component,
+        control_bar::{self, ControlBar},
+        fallback::Fallback,
+        header::Header,
+        playlist::{self, Playlist},
+        tracklist::{self, Tracklist},
+    },
     config::Config,
     input::spawn_input,
     io::{add_metadata, get_config, get_files, save_config},
     model::{self, PlaylistMd, track::Track},
     music::{self, Command, spawn_music},
     task::Task,
-    component::{
-        Component,
-        control_bar::{self, ControlBar},
-        header::Header,
-        playlist::{self, Playlist},
-        tracklist::{self, Tracklist},
-    },
 };
 
 pub struct Player {
@@ -53,6 +54,8 @@ pub struct Player {
     should_exit: bool,
 
     last_seek_timer: Instant,
+
+    fallback_render: bool,
 
     audio_tx: Sender<Command>,
     audio_rx: Receiver<music::Message>,
@@ -174,6 +177,8 @@ impl Player {
 
             // tracks: tracks.into(),
             last_seek_timer: Instant::now(),
+
+            fallback_render: false,
 
             audio_tx: main_audio_tx,
             audio_rx: audio_main_rx,
@@ -427,23 +432,28 @@ impl Player {
                 return Task::batch(vec![action.task, instruction_message]);
             }
             Message::Resize(area) => {
-                let [header_area, main_area, control_area] = Layout::new(
-                    Direction::Vertical,
-                    [
-                        Constraint::Length(2),
-                        Constraint::Fill(1),
-                        Constraint::Length(4),
-                    ],
-                )
-                .areas(area);
+                if area.width < 21 {
+                    self.fallback_render = true;
+                } else {
+                    self.fallback_render = false;
+                    let [header_area, main_area, control_area] = Layout::new(
+                        Direction::Vertical,
+                        [
+                            Constraint::Length(2),
+                            Constraint::Fill(1),
+                            Constraint::Length(4),
+                        ],
+                    )
+                    .areas(area);
 
-                self.header.resize(header_area);
+                    self.header.resize(header_area);
 
-                // Handle resizing messages later
-                self.tracklist.update(tracklist::Message::Resize(main_area));
-                self.playlist.update(playlist::Message::Resize(main_area));
-                self.control_bar
-                    .update(control_bar::Message::Resize(control_area));
+                    // Handle resizing messages later
+                    self.tracklist.update(tracklist::Message::Resize(main_area));
+                    self.playlist.update(playlist::Message::Resize(main_area));
+                    self.control_bar
+                        .update(control_bar::Message::Resize(control_area));
+                }
             }
             Message::Exit => self.should_exit = true,
 
@@ -616,17 +626,21 @@ impl Player {
 }
 
 impl Widget for &Player {
-    fn render(self, _area: Rect, buf: &mut Buffer)
+    fn render(self, area: Rect, buf: &mut Buffer)
     where
         Self: Sized,
     {
-        self.header.view(buf);
+        if self.fallback_render {
+            Widget::render(Fallback, area, buf);
+        } else {
+            self.header.view(buf);
 
-        match self.focused_widget {
-            Focus::Tracklist => self.tracklist.view(buf),
-            Focus::Playlist => self.playlist.view(buf),
+            match self.focused_widget {
+                Focus::Tracklist => self.tracklist.view(buf),
+                Focus::Playlist => self.playlist.view(buf),
+            }
+
+            self.control_bar.view(buf);
         }
-
-        self.control_bar.view(buf);
     }
 }

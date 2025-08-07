@@ -286,6 +286,7 @@ impl Component for ControlBar {
                 let cell = buf
                     .cell_mut((progress_area.x + x, progress_area.y))
                     .unwrap();
+
                 if x < till {
                     cell.set_char('#');
                 } else {
