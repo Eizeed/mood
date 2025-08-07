@@ -7,6 +7,7 @@ pub mod header;
 pub mod playlist;
 pub mod new_playlist_input;
 pub mod tracklist;
+pub mod search;
 
 pub trait Component {
     type Output;

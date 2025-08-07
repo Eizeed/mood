@@ -16,14 +16,16 @@ use ratatui::{
 use crate::{
     action::Action,
     app::{Repeat, Shuffle},
+    component::{Component, gen_popup::Popup, search::Search},
     model,
-    component::Component,
 };
 
 #[derive(Debug)]
 pub struct Tracklist {
     pub library: Rc<[model::Track]>,
     pub base: Rc<[model::Track]>,
+
+    pub search: Popup<Search<model::Track>>,
 
     pub list: Vec<model::Track>,
     pub auto_queue: VecDeque<model::Track>,
@@ -68,6 +70,9 @@ pub enum Message {
     SkipToNext,
     SkipToPrev,
 
+    ShowSearch,
+    HideSearch,
+
     CursorDown(u16),
     CursorUp(u16),
 
@@ -88,6 +93,12 @@ impl Tracklist {
         Tracklist {
             library: tracks.clone(),
             base: tracks.clone(),
+
+            search: Popup::new(Search::new(
+                tracks.clone(),
+                area.centered(Constraint::Percentage(75), Constraint::Percentage(75)),
+            )),
+
             list: tracks.to_vec(),
             auto_queue: VecDeque::new(),
             manual_queue: VecDeque::new(),
@@ -117,6 +128,13 @@ impl Tracklist {
             },
             KeyCode::Char('p') => Message::FocusPlaylist,
             KeyCode::Char('d') => Message::RemoveTrack,
+            KeyCode::Char('c') => {
+                if self.search.is_show() {
+                    Message::HideSearch
+                } else {
+                    Message::ShowSearch
+                }
+            }
             _ => return None,
         };
 
@@ -336,6 +354,14 @@ impl Component for Tracklist {
                 };
                 Action::none()
             }
+            Message::ShowSearch => {
+                self.search.show();
+                Action::none()
+            }
+            Message::HideSearch => {
+                self.search.hide();
+                Action::none()
+            }
             Message::CursorUp(amount) => {
                 self.cursor_up(amount);
                 Action::none()
@@ -411,6 +437,7 @@ impl Component for Tracklist {
             }
             Message::Resize(area) => {
                 self.resize(area);
+                self.search.resize(area.centered(Constraint::Percentage(75), Constraint::Percentage(75)));
 
                 Action::none()
             }
@@ -487,5 +514,9 @@ impl Component for Tracklist {
         };
 
         list.render(area, buffer);
+
+        if self.search.is_show() {
+            self.search.view(buffer);
+        }
     }
 }

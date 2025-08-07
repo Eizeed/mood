@@ -7,6 +7,7 @@ use ratatui::{
 
 use crate::component::Component;
 
+#[derive(Debug)]
 pub struct Popup<T>
 where
     T: Component,
@@ -29,6 +30,10 @@ where
 
     pub fn hide(&mut self) {
         self.show = false;
+    }
+
+    pub fn is_show(&self) -> bool {
+        self.show
     }
 }
 

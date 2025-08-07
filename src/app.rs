@@ -47,22 +47,18 @@ pub struct Player {
     mode: Mode,
 
     paused: bool,
-    // progress: f32,
     volume: f32,
     repeat: Repeat,
     shuffle: Shuffle,
     should_exit: bool,
 
-    // tracks: Rc<[Track]>,
     last_seek_timer: Instant,
 
-    // debug_timer: Instant,
     audio_tx: Sender<Command>,
     audio_rx: Receiver<music::Message>,
     input_rx: Receiver<Event>,
 
     db_conn: Connection,
-    // area: Rect,
 }
 
 #[derive(Debug, Clone)]

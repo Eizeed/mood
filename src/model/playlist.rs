@@ -2,7 +2,7 @@ use lofty::file::AudioFile;
 use rusqlite::Connection;
 use uuid::Uuid;
 
-use crate::model;
+use crate::{component::search::Searchable, model};
 
 #[derive(Debug, Clone)]
 pub struct PlaylistMd {
@@ -47,13 +47,19 @@ impl PlaylistMd {
             .map(|p| p.unwrap())
             .collect()
     }
-    
+
     pub fn delete(self, conn: &Connection) {
         conn.execute(
             "DELETE FROM playlists WHERE uuid = ?1",
             [self.uuid.to_string()],
         )
         .unwrap();
+    }
+}
+
+impl Searchable for PlaylistMd {
+    fn name(&self) -> std::borrow::Cow<'_, str> {
+        self.name.as_str().into()
     }
 }
 
@@ -113,5 +119,11 @@ impl Playlist {
             name: md.name,
             tracks,
         }
+    }
+}
+
+impl Searchable for Playlist {
+    fn name(&self) -> std::borrow::Cow<'_, str> {
+        self.name.as_str().into()
     }
 }
