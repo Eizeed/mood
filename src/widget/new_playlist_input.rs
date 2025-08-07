@@ -1,13 +1,13 @@
 use ratatui::{
     crossterm::event::{KeyCode, KeyModifiers},
-    layout::Rect,
+    layout::{HorizontalAlignment, Rect},
     text::Text,
     widgets::{Block, Paragraph, Widget},
 };
 
 use crate::{action::Action, widget::Component};
 
-pub struct Popup {
+pub struct NewPlaylistInput {
     pub buffer: String,
     area: Rect,
 }
@@ -26,16 +26,16 @@ pub enum Message {
     Submit,
 }
 
-impl Popup {
+impl NewPlaylistInput {
     pub fn new(area: Rect) -> Self {
-        Popup {
+        NewPlaylistInput {
             buffer: String::new(),
             area,
         }
     }
 }
 
-impl Component for Popup {
+impl Component for NewPlaylistInput {
     type Message = Message;
     type Output = Action<Instruction, Message>;
 
@@ -86,7 +86,17 @@ impl Component for Popup {
         Self: Sized,
     {
         Paragraph::new(Text::raw(&self.buffer))
-            .block(Block::bordered())
+            .block(
+                Block::bordered()
+                    .title("Create Playlist")
+                    .title_alignment(HorizontalAlignment::Center)
+                    .padding(ratatui::widgets::Padding {
+                        left: 1,
+                        right: 1,
+                        top: 0,
+                        bottom: 0,
+                    }),
+            )
             .render(self.area, buf);
     }
 }

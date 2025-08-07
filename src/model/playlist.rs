@@ -47,7 +47,7 @@ impl PlaylistMd {
             .map(|p| p.unwrap())
             .collect()
     }
-
+    
     pub fn delete(self, conn: &Connection) {
         conn.execute(
             "DELETE FROM playlists WHERE uuid = ?1",

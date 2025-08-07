@@ -1,6 +1,6 @@
 use ratatui::{
     crossterm::event::{KeyCode, KeyModifiers},
-    layout::Rect,
+    layout::{Constraint, Rect},
     style::Color,
     text::{Line, Text},
     widgets::{Block, Paragraph, Widget},
@@ -13,15 +13,16 @@ use crate::{
     model::{self, playlist::PlaylistMd},
     task::Task,
     widget::{
-        Component, gen_popup,
-        popup::{self, Popup},
+        Component,
+        gen_popup::{self, Popup},
+        new_playlist_input::{self, NewPlaylistInput},
     },
 };
 
 pub struct Playlist {
     pub list: Vec<model::PlaylistMd>,
 
-    pub popup: gen_popup::Popup<Popup>,
+    pub popup: gen_popup::Popup<NewPlaylistInput>,
     pub selected_track: Option<model::Track>,
 
     pub focused_widget: Focus,
@@ -45,7 +46,7 @@ pub enum Instruction {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    Popup(popup::Message),
+    Popup(new_playlist_input::Message),
 
     SetPlaylists(Vec<model::PlaylistMd>),
 
@@ -74,7 +75,7 @@ pub enum Focus {
 
 #[derive(Debug, Clone)]
 enum PlaylistInstruction {
-    Popup(popup::Instruction),
+    Popup(new_playlist_input::Instruction),
 }
 
 impl Playlist {
@@ -82,8 +83,8 @@ impl Playlist {
         let list = PlaylistMd::get_all(conn);
         Playlist {
             list,
-            popup: gen_popup::Popup::new(Popup::new(
-                area.centered_vertically(ratatui::layout::Constraint::Length(3)),
+            popup: Popup::new(NewPlaylistInput::new(
+                area.centered(Constraint::Percentage(75), Constraint::Length(3)),
             )),
             focused_widget: Focus::Parent,
             selected_track: None,
@@ -131,8 +132,10 @@ impl Playlist {
     fn perform(&mut self, instruction: PlaylistInstruction) -> Task<Message> {
         match instruction {
             PlaylistInstruction::Popup(popup_inst) => match popup_inst {
-                popup::Instruction::Submit(name) => Task::new(Message::CreatePlaylist(name)),
-                popup::Instruction::Cancel => Task::new(Message::ClosePopup),
+                new_playlist_input::Instruction::Submit(name) => {
+                    Task::new(Message::CreatePlaylist(name))
+                }
+                new_playlist_input::Instruction::Cancel => Task::new(Message::ClosePopup),
             },
         }
     }
@@ -314,8 +317,7 @@ impl Component for Playlist {
             Focus::Popup => {
                 self.popup.view(buf);
             }
-            Focus::Parent => {
-            }
+            Focus::Parent => {}
         }
     }
 }

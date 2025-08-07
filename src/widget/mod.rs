@@ -5,7 +5,7 @@ pub mod control_bar;
 pub mod gen_popup;
 pub mod header;
 pub mod playlist;
-pub mod popup;
+pub mod new_playlist_input;
 pub mod tracklist;
 
 pub trait Component {

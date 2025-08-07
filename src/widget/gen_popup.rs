@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::widget::Component;
+
 pub struct Popup<T>
 where
     T: Component,
@@ -33,6 +34,7 @@ where
 
 impl<T: Component> Deref for Popup<T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
