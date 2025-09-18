@@ -2,6 +2,28 @@ use std::time::Duration;
 
 use crossterm::event;
 
+#[derive(PartialEq, Debug)]
+pub enum EventState {
+    Consumed,
+    NotConsumed,
+}
+
+impl EventState {
+    pub fn is_consumed(&self) -> bool {
+        *self == EventState::Consumed
+    }
+}
+
+impl From<bool> for EventState {
+    fn from(consumed: bool) -> Self {
+        if consumed {
+            EventState::Consumed
+        } else {
+            EventState::NotConsumed
+        }
+    }
+}
+
 pub struct EventHandler {
     rx: crossbeam_channel::Receiver<Event>,
 }
