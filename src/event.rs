@@ -35,6 +35,7 @@ impl EventHandler {
 pub enum Event {
     Tick,
     Input(Key),
+    Audio(AudioMessage),
 }
 
 #[derive(Copy, Clone)]
@@ -81,3 +82,9 @@ impl From<event::KeyEvent> for Key {
         Self::Unknown
     }
 }
+
+#[derive(Clone, Copy)]
+pub enum AudioMessage {}
+
+#[derive(Clone, Copy)]
+pub enum Command {}
