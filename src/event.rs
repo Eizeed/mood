@@ -32,16 +32,17 @@ impl EventHandler {
     pub fn new(tickrate: Duration) -> Self {
         let (event_tx, event_rx) = crossbeam_channel::unbounded();
 
+        let tx = event_tx.clone();
         _ = std::thread::spawn(move || {
             loop {
                 if event::poll(tickrate).unwrap() {
                     if let event::Event::Key(key) = event::read().unwrap() {
                         let key = Key::from(key);
-                        event_tx.send(Event::Input(key)).unwrap();
+                        tx.send(Event::Input(key)).unwrap();
                     }
                 }
 
-                event_tx.send(Event::Tick).unwrap();
+                tx.send(Event::Tick).unwrap();
             }
         });
 
@@ -105,8 +106,14 @@ impl From<event::KeyEvent> for Key {
     }
 }
 
+// TODO: Create actual messages
 #[derive(Clone, Copy)]
-pub enum AudioMessage {}
+pub enum AudioMessage {
+    Noop
+}
 
+// TODO: Create actual commands
 #[derive(Clone, Copy)]
-pub enum Command {}
+pub enum Command {
+    Noop
+}
