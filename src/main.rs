@@ -1,12 +1,11 @@
 use std::{path::PathBuf, time::Duration};
 
-use crossterm::event as crossterm_event;
 use rusqlite::Connection;
 
 use crate::{
     app::App,
     config::Config,
-    event::{Event, Key},
+    event::Event,
     utils::{spawn_audio_thread, spawn_event_emmiter},
 };
 
