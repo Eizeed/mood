@@ -1,8 +1,20 @@
+use std::path::PathBuf;
+
 use crate::event::Key;
 
 #[derive(Default)]
 pub struct Config {
+    pub audio_dir: PathBuf,
     pub key_config: KeyConfig,
+}
+
+impl Config {
+    pub fn new(audio_dir: PathBuf) -> Self {
+        Config {
+            audio_dir,
+            key_config: KeyConfig::default(),
+        }
+    }
 }
 
 pub struct KeyConfig {
