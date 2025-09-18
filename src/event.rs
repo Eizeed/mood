@@ -10,7 +10,7 @@ impl EventHandler {
     pub fn new(tickrate: Duration) -> Self {
         let (event_tx, event_rx) = crossbeam_channel::unbounded();
 
-        tokio::spawn(async move {
+        _ = std::thread::spawn(move || {
             loop {
                 if event::poll(tickrate).unwrap() {
                     if let event::Event::Key(key) = event::read().unwrap() {
