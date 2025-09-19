@@ -14,10 +14,12 @@ mod components;
 mod config;
 mod event;
 mod io;
-mod utils;
 mod models;
+mod utils;
 
 fn main() -> color_eyre::Result<()> {
+    let mut terminal = ratatui::init();
+
     let tickrate = Duration::from_millis(250);
 
     let (event_tx, event_rx) = crossbeam_channel::unbounded();
@@ -30,15 +32,25 @@ fn main() -> color_eyre::Result<()> {
 
     let sqlite = Connection::open("db.db3")?;
 
-    let app = App::new(command_tx, config, sqlite);
+    let mut app = App::new(command_tx, config, sqlite)?;
 
+    terminal.draw(|f| app.render(f.area(), f.buffer_mut()))?;
     loop {
-        //render
-
         match event_rx.recv()? {
-            Event::Input(key) => {}
+            Event::Input(key) => {
+                if !app.event(key)?.is_consumed() {
+                    if key == app.config.key_config.quit {
+                        panic!();
+                        break;
+                    }
+                }
+            }
             Event::Tick => (),
             Event::Audio(audio) => {}
         }
+
+        terminal.draw(|f| app.render(f.area(), f.buffer_mut()))?;
     }
+
+    Ok(())
 }
