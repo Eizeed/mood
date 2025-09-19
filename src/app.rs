@@ -1,7 +1,9 @@
-use crate::{components::Widget, event::{EventState, Key}};
+use crate::{
+    components::Component,
+    event::{EventState, Key},
+};
 use color_eyre::Result;
-use ratatui::{buffer::Buffer, layout::Rect, widgets::Paragraph};
-use std::{path::PathBuf, rc::Rc};
+use ratatui::{buffer::Buffer, layout::Rect, widgets::WidgetRef};
 
 use rusqlite::Connection;
 
@@ -10,7 +12,6 @@ use crate::{
     config::Config,
     event::Command,
     io::{add_metadata, get_files},
-    models::Track,
 };
 
 pub enum Focus {
@@ -19,8 +20,6 @@ pub enum Focus {
 }
 
 pub struct App {
-    library: Rc<Vec<Track>>,
-
     tracklist: TracklistComponent,
     playlist: PlaylistComponent,
     player_controls: PlayerControlsComponent,
@@ -43,8 +42,7 @@ impl App {
         let tracks = add_metadata(paths);
 
         Ok(App {
-            library: Rc::new(tracks),
-            tracklist: TracklistComponent {},
+            tracklist: TracklistComponent::new(tracks, config.key_config.clone(), audio_tx.clone()),
             playlist: PlaylistComponent {},
             player_controls: PlayerControlsComponent {},
             focus: Focus::Tracklist,
@@ -55,17 +53,20 @@ impl App {
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
-        let tracks = self
-            .library
-            .iter()
-            .take(area.height as usize)
-            .map(|t| t.path.to_path_buf().to_string_lossy().to_string())
-            .collect::<Vec<String>>();
-
-        Paragraph::new(tracks.join("\n")).render(area, buf);
+        match self.focus {
+            Focus::Tracklist => self.tracklist.render_ref(area, buf),
+            Focus::Playlist => unimplemented!(),
+        }
     }
 
-    pub fn event(&mut self, event: Key) -> Result<EventState> {
-        Ok(EventState::NotConsumed)
+    pub fn event(&mut self, key: Key) -> Result<EventState> {
+        self.component_event(key)
+    }
+
+    fn component_event(&mut self, key: Key) -> Result<EventState> {
+        match self.focus {
+            Focus::Tracklist => self.tracklist.event(key),
+            Focus::Playlist => unimplemented!(),
+        }
     }
 }
