@@ -17,7 +17,7 @@ impl Config {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Clone)]
 pub struct KeyConfig {
     pub quit: Key,
 
