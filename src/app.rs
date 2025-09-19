@@ -1,5 +1,7 @@
+use crate::{components::Widget, event::{EventState, Key}};
 use color_eyre::Result;
-use std::rc::Rc;
+use ratatui::{buffer::Buffer, layout::Rect, widgets::Paragraph};
+use std::{path::PathBuf, rc::Rc};
 
 use rusqlite::Connection;
 
@@ -50,5 +52,20 @@ impl App {
             audio_tx,
             config,
         })
+    }
+
+    pub fn render(&self, area: Rect, buf: &mut Buffer) {
+        let tracks = self
+            .library
+            .iter()
+            .take(area.height as usize)
+            .map(|t| t.path.to_path_buf().to_string_lossy().to_string())
+            .collect::<Vec<String>>();
+
+        Paragraph::new(tracks.join("\n")).render(area, buf);
+    }
+
+    pub fn event(&mut self, event: Key) -> Result<EventState> {
+        Ok(EventState::NotConsumed)
     }
 }
