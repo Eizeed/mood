@@ -13,7 +13,9 @@ mod app;
 mod components;
 mod config;
 mod event;
+mod io;
 mod utils;
+mod models;
 
 fn main() -> color_eyre::Result<()> {
     let tickrate = Duration::from_millis(250);
