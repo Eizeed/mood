@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::path::PathBuf;
 
-use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, KeyCode, KeyModifiers};
 
 #[derive(PartialEq, Debug)]
 pub enum EventState {
@@ -24,37 +24,7 @@ impl From<bool> for EventState {
     }
 }
 
-pub struct EventHandler {
-    rx: crossbeam_channel::Receiver<Event>,
-}
-
-impl EventHandler {
-    pub fn new(tickrate: Duration) -> Self {
-        let (event_tx, event_rx) = crossbeam_channel::unbounded();
-
-        let tx = event_tx.clone();
-        _ = std::thread::spawn(move || {
-            loop {
-                if event::poll(tickrate).unwrap() {
-                    if let event::Event::Key(key) = event::read().unwrap() {
-                        let key = Key::from(key);
-                        tx.send(Event::Input(key)).unwrap();
-                    }
-                }
-
-                tx.send(Event::Tick).unwrap();
-            }
-        });
-
-        EventHandler { rx: event_rx }
-    }
-
-    pub fn next(&self) -> Result<Event, crossbeam_channel::RecvError> {
-        self.rx.recv()
-    }
-}
-
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum Event {
     Tick,
     Input(Key),
@@ -145,13 +115,12 @@ impl From<event::KeyEvent> for Key {
 }
 
 // TODO: Create actual messages
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum AudioMessage {
     Noop,
 }
 
-// TODO: Create actual commands
-#[derive(Clone, Copy)]
 pub enum Command {
+    Play(PathBuf),
     Noop,
 }
