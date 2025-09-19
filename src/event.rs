@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crossterm::event;
+use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(PartialEq, Debug)]
 pub enum EventState {
@@ -61,7 +61,7 @@ pub enum Event {
     Audio(AudioMessage),
 }
 
-#[derive(Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum Key {
     Enter,
     Tab,
@@ -73,7 +73,7 @@ pub enum Key {
     Up,
     Down,
 
-    Ins,
+    Insert,
     Delete,
     Home,
     End,
@@ -102,18 +102,56 @@ pub enum Key {
 
 impl From<event::KeyEvent> for Key {
     fn from(value: event::KeyEvent) -> Self {
-        Self::Unknown
+        let mods = value.modifiers;
+        let code = value.code;
+        match code {
+            KeyCode::Enter => Self::Enter,
+            KeyCode::Tab => Self::Tab,
+            KeyCode::Backspace => Self::Backspace,
+            KeyCode::Esc => Self::Esc,
+
+            KeyCode::Left => Self::Left,
+            KeyCode::Right => Self::Right,
+            KeyCode::Up => Self::Up,
+            KeyCode::Down => Self::Down,
+
+            KeyCode::Insert => Self::Insert,
+            KeyCode::Delete => Self::Delete,
+            KeyCode::Home => Self::Home,
+            KeyCode::End => Self::End,
+            KeyCode::PageUp => Self::PageUp,
+            KeyCode::PageDown => Self::PageDown,
+
+            KeyCode::F(0) => Self::F0,
+            KeyCode::F(1) => Self::F1,
+            KeyCode::F(2) => Self::F2,
+            KeyCode::F(3) => Self::F3,
+            KeyCode::F(4) => Self::F4,
+            KeyCode::F(5) => Self::F5,
+            KeyCode::F(6) => Self::F6,
+            KeyCode::F(7) => Self::F7,
+            KeyCode::F(8) => Self::F8,
+            KeyCode::F(9) => Self::F9,
+            KeyCode::F(10) => Self::F10,
+            KeyCode::F(11) => Self::F11,
+            KeyCode::F(12) => Self::F12,
+
+            KeyCode::Char(c) if mods == KeyModifiers::CONTROL => Self::Ctrl(c),
+            KeyCode::Char(c) if mods == KeyModifiers::ALT => Self::Alt(c),
+            KeyCode::Char(c) => Self::Char(c),
+            _ => Self::Unknown,
+        }
     }
 }
 
 // TODO: Create actual messages
 #[derive(Clone, Copy)]
 pub enum AudioMessage {
-    Noop
+    Noop,
 }
 
 // TODO: Create actual commands
 #[derive(Clone, Copy)]
 pub enum Command {
-    Noop
+    Noop,
 }
