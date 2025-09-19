@@ -40,7 +40,6 @@ fn main() -> color_eyre::Result<()> {
             Event::Input(key) => {
                 if !app.event(key)?.is_consumed() {
                     if key == app.config.key_config.quit {
-                        panic!();
                         break;
                     }
                 }
