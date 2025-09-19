@@ -51,5 +51,7 @@ fn main() -> color_eyre::Result<()> {
         terminal.draw(|f| app.render(f.area(), f.buffer_mut()))?;
     }
 
+    ratatui::restore();
+
     Ok(())
 }
