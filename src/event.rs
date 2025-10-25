@@ -117,6 +117,7 @@ impl From<event::KeyEvent> for Key {
 // TODO: Create actual messages
 #[derive(Clone)]
 pub enum AudioMessage {
+    EndOfTrack,
     Noop,
 }
 

@@ -79,7 +79,14 @@ where
     type Item = T::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
+        let n = self.inner.next();
+        if n.is_none() {
+            _ = self
+                .main_handle
+                .send(Event::Audio(AudioMessage::EndOfTrack));
+        }
+
+        n
     }
 }
 
