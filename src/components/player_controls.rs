@@ -51,7 +51,7 @@ impl WidgetRef for PlayerControlsComponent {
             .render(name_area, buf);
 
         let done = progress_area.width * self.progress / 100;
-        eprintln!("{}, {}", progress_area.width, self.progress);
+        // eprintln!("{}, {}", progress_area.width, self.progress);
         for i in 0..progress_area.width {
             buf.cell_mut((i + progress_area.x, progress_area.y))
                 .map(|c| c.set_char(if i < done { '#' } else { '-' }));

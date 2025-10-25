@@ -13,9 +13,11 @@ mod app;
 mod audio_thread;
 mod components;
 mod config;
+mod current_track;
 mod event;
 mod io;
 mod models;
+mod source;
 mod utils;
 
 fn main() -> color_eyre::Result<()> {
@@ -46,7 +48,7 @@ fn main() -> color_eyre::Result<()> {
                 }
             }
             Event::Tick => {
-                app.tick();
+                app.tick()?;
             }
             Event::Audio(audio) => {
                 app.audio(audio);

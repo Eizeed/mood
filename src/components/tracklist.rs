@@ -6,25 +6,26 @@ use ratatui::style::Color;
 use ratatui::widgets::{Block, Paragraph};
 
 use super::{Component, Widget, WidgetRef};
+use crate::app::Command;
 use crate::components::utils::VerticalScroll;
 use crate::config::KeyConfig;
-use crate::event::{Command, EventState};
+use crate::event::EventState;
 use crate::models::Track;
 
 pub struct TracklistComponent {
     library: Vec<Track>,
     scroll: VerticalScroll,
     key_config: KeyConfig,
-    command_tx: Sender<Command>,
+    app_cmd_tx: Sender<Command>,
 }
 
 impl TracklistComponent {
-    pub fn new(lib: Vec<Track>, key_config: KeyConfig, command_tx: Sender<Command>) -> Self {
+    pub fn new(lib: Vec<Track>, key_config: KeyConfig, app_cmd_tx: Sender<Command>) -> Self {
         Self {
             library: lib,
             scroll: VerticalScroll::new(),
             key_config,
-            command_tx,
+            app_cmd_tx,
         }
     }
 
@@ -39,7 +40,9 @@ impl TracklistComponent {
     fn play_selected(&mut self) -> Result<()> {
         let index = self.scroll.pos();
         let path = self.library.get(index).unwrap().path.as_path();
-        self.command_tx.send(Command::Play(path.to_path_buf()))?;
+        self.app_cmd_tx.send(Command::SetCurrentTrack {
+            path: path.to_path_buf(),
+        })?;
 
         Ok(())
     }

@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::{fs::File, path::PathBuf};
 
 use crossterm::event::{self, KeyCode, KeyModifiers};
+use rodio::Decoder;
 
 use crate::audio_thread::SinkState;
 
@@ -26,7 +27,6 @@ impl From<bool> for EventState {
     }
 }
 
-#[derive(Clone)]
 pub enum Event {
     Tick,
     Input(Key),
@@ -108,9 +108,7 @@ impl From<event::KeyEvent> for Key {
             KeyCode::F(11) => Self::F11,
             KeyCode::F(12) => Self::F12,
 
-            KeyCode::Char(c) if mods == KeyModifiers::CONTROL => {
-                Self::Ctrl(c)
-            }
+            KeyCode::Char(c) if mods == KeyModifiers::CONTROL => Self::Ctrl(c),
             KeyCode::Char(c) if mods == KeyModifiers::ALT => Self::Alt(c),
             KeyCode::Char(c) => Self::Char(c),
             _ => Self::Unknown,
@@ -118,8 +116,6 @@ impl From<event::KeyEvent> for Key {
     }
 }
 
-// TODO: Create actual messages
-#[derive(Clone)]
 pub enum AudioMessage {
     EndOfTrack,
     State(SinkState),
@@ -127,7 +123,7 @@ pub enum AudioMessage {
 }
 
 pub enum Command {
-    Play(PathBuf),
+    Play(Box<Decoder<File>>),
     SendState,
     Noop,
 }

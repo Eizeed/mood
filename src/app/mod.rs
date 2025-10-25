@@ -1,15 +1,23 @@
+use std::time::Duration;
 use color_eyre::Result;
+use crossbeam_channel::{Receiver, Sender};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::WidgetRef;
+use rodio::Source;
 use rusqlite::Connection;
 
+use crate::app::command::Command as AppCommand;
 use crate::components::{
     Component, PlayerControlsComponent, PlaylistComponent, TracklistComponent,
 };
 use crate::config::Config;
-use crate::event::{AudioMessage, Command, EventState, Key};
+use crate::current_track::CurrentTrack;
+use crate::event::{AudioMessage, Command as AudioCommand, EventState, Key};
 use crate::io::{add_metadata, get_files};
+
+mod command;
+pub use command::Command;
 
 pub enum Focus {
     Tracklist,
@@ -21,30 +29,37 @@ pub struct App {
     playlist: PlaylistComponent,
     player_controls: PlayerControlsComponent,
 
+    current_track: Option<CurrentTrack>,
+
     focus: Focus,
     sqlite: Connection,
 
-    audio_tx: crossbeam_channel::Sender<Command>,
+    audio_tx: Sender<AudioCommand>,
+    widget_cmd_rx: Receiver<AppCommand>,
 
     pub config: Config,
 }
 
 impl App {
-    pub fn new(
-        audio_tx: crossbeam_channel::Sender<Command>,
-        config: Config,
-        sqlite: Connection,
-    ) -> Result<Self> {
+    pub fn new(audio_tx: Sender<AudioCommand>, config: Config, sqlite: Connection) -> Result<Self> {
         let paths = get_files(&config.audio_dir, "mp3")?;
         let tracks = add_metadata(paths);
 
+        let (app_cmd_tx, app_cmd_rx) = crossbeam_channel::bounded(256);
+
         Ok(App {
-            tracklist: TracklistComponent::new(tracks, config.key_config.clone(), audio_tx.clone()),
+            tracklist: TracklistComponent::new(
+                tracks,
+                config.key_config.clone(),
+                app_cmd_tx.clone(),
+            ),
             playlist: PlaylistComponent {},
             player_controls: PlayerControlsComponent::new(),
+            current_track: None,
             focus: Focus::Tracklist,
             sqlite,
             audio_tx,
+            widget_cmd_rx: app_cmd_rx,
             config,
         })
     }
@@ -65,11 +80,14 @@ impl App {
     }
 
     pub fn event(&mut self, key: Key) -> Result<EventState> {
-        self.component_event(key)
+        let res = self.component_event(key);
+        self.drain_commands()?;
+        res
     }
 
-    pub fn tick(&mut self) {
-        _ = self.audio_tx.send(Command::SendState);
+    pub fn tick(&mut self) -> Result<()> {
+        self.audio_tx.send(AudioCommand::SendState)?;
+        Ok(())
     }
 
     pub fn audio(&mut self, audio_message: AudioMessage) {
@@ -77,19 +95,17 @@ impl App {
             AudioMessage::EndOfTrack => {
                 self.player_controls.progress = 0;
                 self.player_controls.name = None;
+                self.current_track = None;
             }
             AudioMessage::State(state) => {
-                let progress = if let Some(d) = state.total_duraiton {
-                    (state.pos.as_secs_f32() / d.as_secs_f32() * 100.0).ceil() as u16
+                let progress = if let Some(current_track) = self.current_track.as_ref() {
+                    (state.pos.as_secs_f32() / current_track.total_duration.as_secs_f32() * 100.0)
+                        .ceil() as u16
                 } else {
                     0
                 };
 
                 self.player_controls.progress = progress;
-                self.player_controls.name = state
-                    .track_path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
             }
             AudioMessage::Noop => {}
         }
@@ -100,5 +116,27 @@ impl App {
             Focus::Tracklist => self.tracklist.event(key),
             Focus::Playlist => unimplemented!(),
         }
+    }
+
+    fn drain_commands(&mut self) -> Result<()> {
+        while let Ok(cmd) = self.widget_cmd_rx.try_recv() {
+            match cmd {
+                AppCommand::SetCurrentTrack { path } => {
+                    let file = std::fs::File::open(&path)?;
+                    let source = rodio::Decoder::new(file)?;
+
+                    self.current_track = Some(CurrentTrack {
+                        path,
+                        total_duration: source.total_duration().unwrap_or(Duration::ZERO),
+                    });
+
+                    self.player_controls.name = Some(self.current_track.as_ref().unwrap().name());
+
+                    _ = self.audio_tx.send(AudioCommand::Play(Box::new(source)));
+                }
+            }
+        }
+
+        Ok(())
     }
 }
