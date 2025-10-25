@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use color_eyre::Result;
 use crossbeam_channel::Sender;
 use ratatui::buffer::Buffer;
@@ -5,8 +7,8 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::widgets::{Block, Paragraph};
 
+use super::ComponentCommand;
 use super::{Component, Widget, WidgetRef};
-use crate::app::Command;
 use crate::components::utils::VerticalScroll;
 use crate::config::KeyConfig;
 use crate::event::EventState;
@@ -16,11 +18,19 @@ pub struct TracklistComponent {
     library: Vec<Track>,
     scroll: VerticalScroll,
     key_config: KeyConfig,
-    app_cmd_tx: Sender<Command>,
+    app_cmd_tx: Sender<ComponentCommand>,
+}
+
+pub enum Command {
+    SetCurrentTrack { path: PathBuf },
 }
 
 impl TracklistComponent {
-    pub fn new(lib: Vec<Track>, key_config: KeyConfig, app_cmd_tx: Sender<Command>) -> Self {
+    pub fn new(
+        lib: Vec<Track>,
+        key_config: KeyConfig,
+        app_cmd_tx: Sender<ComponentCommand>,
+    ) -> Self {
         Self {
             library: lib,
             scroll: VerticalScroll::new(),
@@ -40,10 +50,16 @@ impl TracklistComponent {
     fn play_selected(&mut self) -> Result<()> {
         let index = self.scroll.pos();
         let path = self.library.get(index).unwrap().path.as_path();
-        self.app_cmd_tx.send(Command::SetCurrentTrack {
+        self.send_command(Command::SetCurrentTrack {
             path: path.to_path_buf(),
         })?;
 
+        Ok(())
+    }
+
+    fn send_command(&self, cmd: Command) -> Result<()> {
+        self.app_cmd_tx
+            .send(ComponentCommand::TracklistComponent(cmd))?;
         Ok(())
     }
 }

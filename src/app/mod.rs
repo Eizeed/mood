@@ -1,4 +1,3 @@
-use std::time::Duration;
 use color_eyre::Result;
 use crossbeam_channel::{Receiver, Sender};
 use ratatui::buffer::Buffer;
@@ -6,8 +5,9 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::WidgetRef;
 use rodio::Source;
 use rusqlite::Connection;
+use std::time::Duration;
 
-use crate::app::command::Command as AppCommand;
+use crate::components::ComponentCommand;
 use crate::components::{
     Component, PlayerControlsComponent, PlaylistComponent, TracklistComponent,
 };
@@ -15,9 +15,6 @@ use crate::config::Config;
 use crate::current_track::CurrentTrack;
 use crate::event::{AudioMessage, Command as AudioCommand, EventState, Key};
 use crate::io::{add_metadata, get_files};
-
-mod command;
-pub use command::Command;
 
 pub enum Focus {
     Tracklist,
@@ -35,7 +32,7 @@ pub struct App {
     sqlite: Connection,
 
     audio_tx: Sender<AudioCommand>,
-    widget_cmd_rx: Receiver<AppCommand>,
+    widget_cmd_rx: Receiver<ComponentCommand>,
 
     pub config: Config,
 }
@@ -121,18 +118,24 @@ impl App {
     fn drain_commands(&mut self) -> Result<()> {
         while let Ok(cmd) = self.widget_cmd_rx.try_recv() {
             match cmd {
-                AppCommand::SetCurrentTrack { path } => {
-                    let file = std::fs::File::open(&path)?;
-                    let source = rodio::Decoder::new(file)?;
+                ComponentCommand::TracklistComponent(cmd) => {
+                    use crate::components::tracklist::Command;
+                    match cmd {
+                        Command::SetCurrentTrack { path } => {
+                            let file = std::fs::File::open(&path)?;
+                            let source = rodio::Decoder::new(file)?;
 
-                    self.current_track = Some(CurrentTrack {
-                        path,
-                        total_duration: source.total_duration().unwrap_or(Duration::ZERO),
-                    });
+                            self.current_track = Some(CurrentTrack {
+                                path,
+                                total_duration: source.total_duration().unwrap_or(Duration::ZERO),
+                            });
 
-                    self.player_controls.name = Some(self.current_track.as_ref().unwrap().name());
+                            self.player_controls.name =
+                                Some(self.current_track.as_ref().unwrap().name());
 
-                    _ = self.audio_tx.send(AudioCommand::Play(Box::new(source)));
+                            _ = self.audio_tx.send(AudioCommand::Play(Box::new(source)));
+                        }
+                    }
                 }
             }
         }
