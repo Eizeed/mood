@@ -1,5 +1,5 @@
-use std::io::BufReader;
 use std::time::Duration;
+use std::{io::BufReader, path::PathBuf};
 
 use color_eyre::Result;
 use crossbeam_channel::{Receiver, Sender};
@@ -11,6 +11,7 @@ pub struct AudioThread {
     command_rx: Receiver<Command>,
     event_tx: Sender<Event>,
     source_total_duraiton: Option<Duration>,
+    track_path: PathBuf,
 }
 
 impl AudioThread {
@@ -19,6 +20,7 @@ impl AudioThread {
             command_rx,
             event_tx,
             source_total_duraiton: None,
+            track_path: PathBuf::new(),
         }
     }
 
@@ -43,6 +45,7 @@ impl AudioThread {
                         };
 
                         self.source_total_duraiton = notify_source.total_duration();
+                        self.track_path = path;
 
                         sink.clear();
                         sink.append(notify_source);
@@ -53,6 +56,7 @@ impl AudioThread {
                             total_duraiton: self.source_total_duraiton.clone(),
                             pos: sink.get_pos(),
                             volume: sink.volume(),
+                            track_path: self.track_path.clone(),
                         };
 
                         _ = self.event_tx.send(Event::Audio(AudioMessage::State(state)));
@@ -76,6 +80,7 @@ pub struct SinkState {
     pub total_duraiton: Option<Duration>,
     pub pos: Duration,
     pub volume: f32,
+    pub track_path: PathBuf,
 }
 
 struct NotifySource<T>

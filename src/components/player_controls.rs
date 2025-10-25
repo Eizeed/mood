@@ -1,18 +1,18 @@
-use std::cell::Cell;
-
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Widget, WidgetRef};
 
 pub struct PlayerControlsComponent {
-    pub progress: Cell<u16>,
+    pub name: Option<String>,
+    pub progress: u16,
 }
 
 impl PlayerControlsComponent {
     pub fn new() -> Self {
         PlayerControlsComponent {
-            progress: Cell::new(0),
+            name: None,
+            progress: 0,
         }
     }
 }
@@ -46,10 +46,12 @@ impl WidgetRef for PlayerControlsComponent {
         )
         .areas(progress_area);
 
-        Line::raw("Track name").centered().render(name_area, buf);
+        Line::raw(self.name.as_ref().map(|s| s.as_str()).unwrap_or("No name"))
+            .centered()
+            .render(name_area, buf);
 
-        let done = progress_area.width * self.progress.get() / 100;
-        eprintln!("{}, {}", progress_area.width, self.progress.get());
+        let done = progress_area.width * self.progress / 100;
+        eprintln!("{}, {}", progress_area.width, self.progress);
         for i in 0..progress_area.width {
             buf.cell_mut((i + progress_area.x, progress_area.y))
                 .map(|c| c.set_char(if i < done { '#' } else { '-' }));

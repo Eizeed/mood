@@ -13,21 +13,15 @@ use crate::models::Track;
 
 pub struct TracklistComponent {
     library: Vec<Track>,
-    current_track: Option<usize>,
     scroll: VerticalScroll,
     key_config: KeyConfig,
     command_tx: Sender<Command>,
 }
 
 impl TracklistComponent {
-    pub fn new(
-        lib: Vec<Track>,
-        key_config: KeyConfig,
-        command_tx: Sender<Command>,
-    ) -> Self {
+    pub fn new(lib: Vec<Track>, key_config: KeyConfig, command_tx: Sender<Command>) -> Self {
         Self {
             library: lib,
-            current_track: None,
             scroll: VerticalScroll::new(),
             key_config,
             command_tx,
@@ -45,7 +39,6 @@ impl TracklistComponent {
     fn play_selected(&mut self) -> Result<()> {
         let index = self.scroll.pos();
         let path = self.library.get(index).unwrap().path.as_path();
-        self.current_track = Some(index);
         self.command_tx.send(Command::Play(path.to_path_buf()))?;
 
         Ok(())
@@ -84,8 +77,7 @@ impl WidgetRef for TracklistComponent {
         Paragraph::new(tracks.join("\n")).render(area, buf);
 
         if !self.library.is_empty() {
-            let selection =
-                self.scroll.pos.get() - self.scroll.y_offset.get();
+            let selection = self.scroll.pos() - self.scroll.y_offset.get();
             for i in 0 + area.x..=area.width {
                 buf.cell_mut((i, selection as u16 + area.y))
                     .map(|c| c.set_bg(Color::Blue));

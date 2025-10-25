@@ -5,8 +5,7 @@ use ratatui::widgets::WidgetRef;
 use rusqlite::Connection;
 
 use crate::components::{
-    Component, PlayerControlsComponent, PlaylistComponent,
-    TracklistComponent,
+    Component, PlayerControlsComponent, PlaylistComponent, TracklistComponent,
 };
 use crate::config::Config;
 use crate::event::{AudioMessage, Command, EventState, Key};
@@ -40,11 +39,7 @@ impl App {
         let tracks = add_metadata(paths);
 
         Ok(App {
-            tracklist: TracklistComponent::new(
-                tracks,
-                config.key_config.clone(),
-                audio_tx.clone(),
-            ),
+            tracklist: TracklistComponent::new(tracks, config.key_config.clone(), audio_tx.clone()),
             playlist: PlaylistComponent {},
             player_controls: PlayerControlsComponent::new(),
             focus: Focus::Tracklist,
@@ -80,17 +75,21 @@ impl App {
     pub fn audio(&mut self, audio_message: AudioMessage) {
         match audio_message {
             AudioMessage::EndOfTrack => {
-                self.player_controls.progress.set(0);
+                self.player_controls.progress = 0;
+                self.player_controls.name = None;
             }
             AudioMessage::State(state) => {
                 let progress = if let Some(d) = state.total_duraiton {
-                    (state.pos.as_secs_f32() / d.as_secs_f32() * 100.0)
-                        .ceil() as u16
+                    (state.pos.as_secs_f32() / d.as_secs_f32() * 100.0).ceil() as u16
                 } else {
                     0
                 };
 
-                self.player_controls.progress.set(progress);
+                self.player_controls.progress = progress;
+                self.player_controls.name = state
+                    .track_path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
             }
             AudioMessage::Noop => {}
         }
