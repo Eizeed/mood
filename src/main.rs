@@ -3,13 +3,11 @@ use std::{path::PathBuf, time::Duration};
 use rusqlite::Connection;
 
 use crate::{
-    app::App,
-    config::Config,
-    event::Event,
-    utils::{spawn_audio_thread, spawn_event_emmiter},
+    app::App, audio_thread::AudioThread, config::Config, event::Event, utils::spawn_event_emmiter,
 };
 
 mod app;
+mod audio_thread;
 mod components;
 mod config;
 mod event;
@@ -26,7 +24,7 @@ fn main() -> color_eyre::Result<()> {
     let (command_tx, command_rx) = crossbeam_channel::unbounded();
 
     spawn_event_emmiter(event_tx.clone(), tickrate)?;
-    spawn_audio_thread(command_rx, event_tx.clone())?;
+    AudioThread::new(command_rx, event_tx).run()?;
 
     let config = Config::new(PathBuf::from("/home/lf/music"));
 
@@ -44,8 +42,12 @@ fn main() -> color_eyre::Result<()> {
                     }
                 }
             }
-            Event::Tick => (),
-            Event::Audio(audio) => {}
+            Event::Tick => {
+                app.tick();
+            }
+            Event::Audio(audio) => {
+                app.audio(audio);
+            }
         }
 
         terminal.draw(|f| app.render(f.area(), f.buffer_mut()))?;

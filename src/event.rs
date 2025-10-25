@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use crossterm::event::{self, KeyCode, KeyModifiers};
 
+use crate::audio_thread::SinkState;
+
 #[derive(PartialEq, Debug)]
 pub enum EventState {
     Consumed,
@@ -118,10 +120,12 @@ impl From<event::KeyEvent> for Key {
 #[derive(Clone)]
 pub enum AudioMessage {
     EndOfTrack,
+    State(SinkState),
     Noop,
 }
 
 pub enum Command {
     Play(PathBuf),
+    SendState,
     Noop,
 }

@@ -1,6 +1,6 @@
 use crate::{
     components::Component,
-    event::{EventState, Key},
+    event::{AudioMessage, EventState, Key},
 };
 use color_eyre::Result;
 use ratatui::{
@@ -73,6 +73,26 @@ impl App {
 
     pub fn event(&mut self, key: Key) -> Result<EventState> {
         self.component_event(key)
+    }
+
+    pub fn tick(&mut self) {
+        _ = self.audio_tx.send(Command::SendState);
+    }
+
+    pub fn audio(&mut self, audio_message: AudioMessage) {
+        match audio_message {
+            AudioMessage::EndOfTrack => {}
+            AudioMessage::State(state) => {
+                let progress = if let Some(d) = state.total_duraiton {
+                    (state.pos.as_secs_f32() / d.as_secs_f32() * 100.0).ceil() as u16
+                } else {
+                    0
+                };
+
+                self.player_controls.progress.set(progress);
+            }
+            AudioMessage::Noop => {}
+        }
     }
 
     fn component_event(&mut self, key: Key) -> Result<EventState> {
