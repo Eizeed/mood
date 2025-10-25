@@ -1,19 +1,15 @@
+use color_eyre::Result;
 use crossbeam_channel::Sender;
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::Color,
-    widgets::{Block, Paragraph},
-};
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::widgets::{Block, Paragraph};
 
 use super::{Component, Widget, WidgetRef};
-use crate::{
-    components::utils::VerticalScroll,
-    config::KeyConfig,
-    event::{Command, EventState},
-    models::Track,
-};
-use color_eyre::Result;
+use crate::components::utils::VerticalScroll;
+use crate::config::KeyConfig;
+use crate::event::{Command, EventState};
+use crate::models::Track;
 
 pub struct TracklistComponent {
     library: Vec<Track>,
@@ -24,7 +20,11 @@ pub struct TracklistComponent {
 }
 
 impl TracklistComponent {
-    pub fn new(lib: Vec<Track>, key_config: KeyConfig, command_tx: Sender<Command>) -> Self {
+    pub fn new(
+        lib: Vec<Track>,
+        key_config: KeyConfig,
+        command_tx: Sender<Command>,
+    ) -> Self {
         Self {
             library: lib,
             current_track: None,
@@ -84,7 +84,8 @@ impl WidgetRef for TracklistComponent {
         Paragraph::new(tracks.join("\n")).render(area, buf);
 
         if !self.library.is_empty() {
-            let selection = self.scroll.pos.get() - self.scroll.y_offset.get();
+            let selection =
+                self.scroll.pos.get() - self.scroll.y_offset.get();
             for i in 0 + area.x..=area.width {
                 buf.cell_mut((i, selection as u16 + area.y))
                     .map(|c| c.set_bg(Color::Blue));

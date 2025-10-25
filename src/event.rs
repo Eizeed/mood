@@ -108,7 +108,9 @@ impl From<event::KeyEvent> for Key {
             KeyCode::F(11) => Self::F11,
             KeyCode::F(12) => Self::F12,
 
-            KeyCode::Char(c) if mods == KeyModifiers::CONTROL => Self::Ctrl(c),
+            KeyCode::Char(c) if mods == KeyModifiers::CONTROL => {
+                Self::Ctrl(c)
+            }
             KeyCode::Char(c) if mods == KeyModifiers::ALT => Self::Alt(c),
             KeyCode::Char(c) => Self::Char(c),
             _ => Self::Unknown,

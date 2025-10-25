@@ -1,12 +1,10 @@
-use color_eyre::Result;
 use std::path::{Path, PathBuf};
 
-use lofty::{
-    config::WriteOptions,
-    file::{AudioFile, TaggedFileExt},
-    read_from_path,
-    tag::{ItemKey, ItemValue, Tag, TagItem},
-};
+use color_eyre::Result;
+use lofty::config::WriteOptions;
+use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::read_from_path;
+use lofty::tag::{ItemKey, ItemValue, Tag, TagItem};
 use uuid::Uuid;
 
 use crate::models::Track;
@@ -63,7 +61,8 @@ where
                     tag
                 }
                 None => {
-                    let tag = Tag::new(tagged.file_type().primary_tag_type());
+                    let tag =
+                        Tag::new(tagged.file_type().primary_tag_type());
                     tagged.insert_tag(tag);
                     tagged.primary_tag_mut().unwrap()
                 }

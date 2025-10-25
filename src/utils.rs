@@ -1,13 +1,15 @@
-use std::{io::BufReader, time::Duration};
+use std::time::Duration;
 
 use color_eyre::Result;
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Sender;
 use crossterm::event;
-use rodio::Source;
 
-use crate::event::{AudioMessage, Command, Event, Key};
+use crate::event::{Event, Key};
 
-pub fn spawn_event_emmiter(event_tx: Sender<Event>, tickrate: Duration) -> Result<()> {
+pub fn spawn_event_emmiter(
+    event_tx: Sender<Event>,
+    tickrate: Duration,
+) -> Result<()> {
     _ = std::thread::spawn(move || -> Result<()> {
         loop {
             if event::poll(tickrate)? {

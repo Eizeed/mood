@@ -1,11 +1,9 @@
 use std::cell::Cell;
 
-use ratatui::{
-    buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
-    text::Line,
-    widgets::{Block, Widget, WidgetRef},
-};
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::text::Line;
+use ratatui::widgets::{Block, Widget, WidgetRef};
 
 pub struct PlayerControlsComponent {
     pub progress: Cell<u16>,

@@ -34,15 +34,19 @@ impl VerticalScroll {
     }
 
     pub fn update(&self, visible_height: usize, max_selection: usize) {
-        let new_y_offset = self.calc_scroll_offset(visible_height, self.pos.get(), max_selection);
+        let new_y_offset = self.calc_scroll_offset(
+            visible_height,
+            self.pos.get(),
+            max_selection,
+        );
 
         self.y_offset.set(new_y_offset);
 
         // if visible_height == 0 {
         //     self.y_offset.set(0);
         // } else {
-        //     eprintln!("selection: {selection}, offset: {}", self.y_offset.get());
-        //     if new_pos > self.pos.get() {
+        //     eprintln!("selection: {selection}, offset: {}",
+        // self.y_offset.get());     if new_pos > self.pos.get() {
         //         self.going_down.set(true);
         //     } else if new_y_offset < self.y_offset.get() {
         //         self.going_down.set(false);

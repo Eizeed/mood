@@ -1,22 +1,16 @@
-use crate::{
-    components::Component,
-    event::{AudioMessage, EventState, Key},
-};
 use color_eyre::Result;
-use ratatui::{
-    buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
-    widgets::WidgetRef,
-};
-
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::widgets::WidgetRef;
 use rusqlite::Connection;
 
-use crate::{
-    components::{PlayerControlsComponent, PlaylistComponent, TracklistComponent},
-    config::Config,
-    event::Command,
-    io::{add_metadata, get_files},
+use crate::components::{
+    Component, PlayerControlsComponent, PlaylistComponent,
+    TracklistComponent,
 };
+use crate::config::Config;
+use crate::event::{AudioMessage, Command, EventState, Key};
+use crate::io::{add_metadata, get_files};
 
 pub enum Focus {
     Tracklist,
@@ -46,7 +40,11 @@ impl App {
         let tracks = add_metadata(paths);
 
         Ok(App {
-            tracklist: TracklistComponent::new(tracks, config.key_config.clone(), audio_tx.clone()),
+            tracklist: TracklistComponent::new(
+                tracks,
+                config.key_config.clone(),
+                audio_tx.clone(),
+            ),
             playlist: PlaylistComponent {},
             player_controls: PlayerControlsComponent::new(),
             focus: Focus::Tracklist,
@@ -86,7 +84,8 @@ impl App {
             }
             AudioMessage::State(state) => {
                 let progress = if let Some(d) = state.total_duraiton {
-                    (state.pos.as_secs_f32() / d.as_secs_f32() * 100.0).ceil() as u16
+                    (state.pos.as_secs_f32() / d.as_secs_f32() * 100.0)
+                        .ceil() as u16
                 } else {
                     0
                 };

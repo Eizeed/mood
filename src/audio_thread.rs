@@ -1,8 +1,11 @@
-use crate::event::{AudioMessage, Command, Event};
+use std::io::BufReader;
+use std::time::Duration;
+
 use color_eyre::Result;
 use crossbeam_channel::{Receiver, Sender};
 use rodio::Source;
-use std::{io::BufReader, time::Duration};
+
+use crate::event::{AudioMessage, Command, Event};
 
 pub struct AudioThread {
     command_rx: Receiver<Command>,
@@ -11,7 +14,10 @@ pub struct AudioThread {
 }
 
 impl AudioThread {
-    pub fn new(command_rx: Receiver<Command>, event_tx: Sender<Event>) -> AudioThread {
+    pub fn new(
+        command_rx: Receiver<Command>,
+        event_tx: Sender<Event>,
+    ) -> AudioThread {
         AudioThread {
             command_rx,
             event_tx,
@@ -21,8 +27,9 @@ impl AudioThread {
 
     pub fn run(mut self) -> Result<()> {
         _ = std::thread::spawn(move || -> Result<()> {
-            let stream_handle = rodio::OutputStreamBuilder::open_default_stream()
-                .expect("open default audio stream");
+            let stream_handle =
+                rodio::OutputStreamBuilder::open_default_stream()
+                    .expect("open default audio stream");
             let sink = rodio::Sink::connect_new(&stream_handle.mixer());
             sink.set_volume(0.05);
 
@@ -33,13 +40,16 @@ impl AudioThread {
                 match cmd {
                     Command::Play(path) => {
                         let file = std::fs::File::open(&path).unwrap();
-                        let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+                        let source =
+                            rodio::Decoder::new(BufReader::new(file))
+                                .unwrap();
                         let notify_source = NotifySource {
                             inner: source,
                             main_handle: self.event_tx.clone(),
                         };
 
-                        self.source_total_duraiton = notify_source.total_duration();
+                        self.source_total_duraiton =
+                            notify_source.total_duration();
 
                         sink.clear();
                         sink.append(notify_source);
@@ -47,12 +57,16 @@ impl AudioThread {
                     }
                     Command::SendState => {
                         let state = SinkState {
-                            total_duraiton: self.source_total_duraiton.clone(),
+                            total_duraiton: self
+                                .source_total_duraiton
+                                .clone(),
                             pos: sink.get_pos(),
                             volume: sink.volume(),
                         };
 
-                        _ = self.event_tx.send(Event::Audio(AudioMessage::State(state)));
+                        _ = self.event_tx.send(Event::Audio(
+                            AudioMessage::State(state),
+                        ));
                     }
                     Command::Noop => {
                         continue;

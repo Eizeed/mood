@@ -1,10 +1,13 @@
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
+use std::time::Duration;
 
 use rusqlite::Connection;
 
-use crate::{
-    app::App, audio_thread::AudioThread, config::Config, event::Event, utils::spawn_event_emmiter,
-};
+use crate::app::App;
+use crate::audio_thread::AudioThread;
+use crate::config::Config;
+use crate::event::Event;
+use crate::utils::spawn_event_emmiter;
 
 mod app;
 mod audio_thread;
