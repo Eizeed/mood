@@ -81,7 +81,9 @@ impl App {
 
     pub fn audio(&mut self, audio_message: AudioMessage) {
         match audio_message {
-            AudioMessage::EndOfTrack => {}
+            AudioMessage::EndOfTrack => {
+                self.player_controls.progress.set(0);
+            }
             AudioMessage::State(state) => {
                 let progress = if let Some(d) = state.total_duraiton {
                     (state.pos.as_secs_f32() / d.as_secs_f32() * 100.0).ceil() as u16
