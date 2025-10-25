@@ -5,7 +5,7 @@ use crate::{
 use color_eyre::Result;
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     widgets::WidgetRef,
 };
 
@@ -48,7 +48,7 @@ impl App {
         Ok(App {
             tracklist: TracklistComponent::new(tracks, config.key_config.clone(), audio_tx.clone()),
             playlist: PlaylistComponent {},
-            player_controls: PlayerControlsComponent {},
+            player_controls: PlayerControlsComponent::new(),
             focus: Focus::Tracklist,
             sqlite,
             audio_tx,
@@ -57,8 +57,16 @@ impl App {
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
+        let [main_area, controls_area] = Layout::new(
+            Direction::Vertical,
+            [Constraint::Fill(1), Constraint::Length(5)],
+        )
+        .areas(area);
+
+        self.player_controls.render_ref(controls_area, buf);
+
         match self.focus {
-            Focus::Tracklist => self.tracklist.render_ref(area, buf),
+            Focus::Tracklist => self.tracklist.render_ref(main_area, buf),
             Focus::Playlist => unimplemented!(),
         }
     }
