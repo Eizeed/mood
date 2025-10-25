@@ -3,7 +3,11 @@ use crate::{
     event::{EventState, Key},
 };
 use color_eyre::Result;
-use ratatui::{buffer::Buffer, layout::Rect, widgets::WidgetRef};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    widgets::WidgetRef,
+};
 
 use rusqlite::Connection;
 
