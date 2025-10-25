@@ -1,5 +1,10 @@
 use crossbeam_channel::Sender;
-use ratatui::{buffer::Buffer, layout::Rect, style::Color, widgets::Paragraph};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::Color,
+    widgets::{Block, Paragraph},
+};
 
 use super::{Component, Widget, WidgetRef};
 use crate::{
@@ -49,6 +54,13 @@ impl TracklistComponent {
 
 impl WidgetRef for TracklistComponent {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+        let area = {
+            let border = Block::bordered();
+            let a = border.inner(area);
+            border.render(area, buf);
+            a
+        };
+
         self.scroll.update(area.height as usize, self.library.len());
 
         let tracks = self
@@ -56,15 +68,25 @@ impl WidgetRef for TracklistComponent {
             .iter()
             .skip(self.scroll.y_offset.get())
             .take(area.height as usize)
-            .map(|t| t.path.to_path_buf().to_string_lossy().to_string())
+            .map(|t| {
+                t.path
+                    .to_path_buf()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .split('[')
+                    .next()
+                    .unwrap()
+                    .to_string()
+            })
             .collect::<Vec<String>>();
 
         Paragraph::new(tracks.join("\n")).render(area, buf);
 
         if !self.library.is_empty() {
             let selection = self.scroll.pos.get() - self.scroll.y_offset.get();
-            for i in 0..area.width {
-                buf.cell_mut((i, selection as u16))
+            for i in 0 + area.x..=area.width {
+                buf.cell_mut((i, selection as u16 + area.y))
                     .map(|c| c.set_bg(Color::Blue));
             }
         }
